@@ -169,10 +169,4 @@ This project is open-source and free to modify.
 
 ## 🙌 Author
 Made with ❤️ by **Om Gupta**
-
----
-
-If you'd like, I can also generate:  
-✅ Demo screenshots section  
-✅ GIF preview  
-✅ Resume-ready project description  
+ 
