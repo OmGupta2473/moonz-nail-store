@@ -20,7 +20,9 @@ import {
   writeBatch,
   getDocs,
   setLogLevel,
-  updateDoc
+  updateDoc,
+  where,
+  orderBy
 } from 'firebase/firestore';
 import { 
   Home, 
@@ -31,7 +33,6 @@ import {
   X, 
   Trash2, 
   Menu,
-  Database, // Database icon enabled
   LogIn,
   LogOut,
   CreditCard,
@@ -44,7 +45,16 @@ import {
   Package, 
   MapPin, 
   ClipboardList,
-  ChevronLeft 
+  ChevronLeft,
+  Ticket, 
+  Tag,
+  Shield, 
+  Edit,   
+  Plus,   
+  Save,   
+  Search, 
+  LayoutDashboard,
+  Heart
 } from 'lucide-react';
 
 // =================================================================
@@ -61,6 +71,8 @@ const FIREBASE_CONFIG = {
   measurementId: "G-EV5N2W4CN3"
 };
 
+const ADMIN_EMAIL = "omgupta111k@gmail.com";
+
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", 
   "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", 
@@ -70,7 +82,6 @@ const INDIAN_STATES = [
   "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
 ];
 
-// REVERTED: Using Placehold.co images for consistent sizing
 const DUMMY_PRODUCTS = [
   {
     name: "Classic Nude Press-Ons",
@@ -388,7 +399,18 @@ const FormSelect = ({ label, name, value, onChange, children, ...props }) => (
   </div>
 );
 
-const OrderSummary = memo(({ cartItems, total }) => (
+const OrderSummary = memo(({ 
+  cartItems, 
+  subtotal = 0, 
+  discount = 0, 
+  total = 0, 
+  appliedCoupon,
+  couponCode,
+  setCouponCode,
+  handleApplyCoupon,
+  couponMsg,
+  removeCoupon
+}) => (
   <div className="bg-white rounded-lg shadow-xl p-8 sticky top-28">
     <h2 className="text-2xl font-semibold text-gray-900 mb-6">Your Order</h2>
     <ul className="divide-y divide-gray-200 mb-6 max-h-64 overflow-y-auto">
@@ -399,8 +421,65 @@ const OrderSummary = memo(({ cartItems, total }) => (
         </li>
       ))}
     </ul>
-    <div className="border-t border-gray-200 pt-4">
-      <div className="flex justify-between items-center">
+
+    {/* Integrated Coupon Section */}
+    <div className="mb-6 pt-4 border-t border-gray-200">
+        <div className="flex items-center mb-3">
+            <Ticket className="w-4 h-4 text-pink-600 mr-2" />
+            <h3 className="text-sm font-medium text-gray-900">Have a coupon?</h3>
+        </div>
+        <div className="flex gap-2">
+            <input
+            type="text"
+            value={couponCode}
+            onChange={(e) => setCouponCode(e.target.value)}
+            placeholder="Enter code"
+            className="flex-1 border border-gray-300 rounded-md shadow-sm focus:ring-pink-500 focus:border-pink-500 text-sm p-2"
+            disabled={appliedCoupon !== null}
+            />
+            {appliedCoupon ? (
+            <button
+                type="button"
+                onClick={removeCoupon}
+                className="px-3 py-2 bg-red-100 text-red-700 rounded-md font-medium hover:bg-red-200 transition-colors text-xs"
+            >
+                Remove
+            </button>
+            ) : (
+            <button
+                type="button"
+                onClick={handleApplyCoupon}
+                className="px-3 py-2 bg-gray-900 text-white rounded-md font-medium hover:bg-pink-600 transition-colors text-xs"
+            >
+                Apply
+            </button>
+            )}
+        </div>
+        {couponMsg?.text && (
+            <p className={`mt-2 text-xs ${couponMsg.type === 'success' ? 'text-green-600 font-medium' : 'text-red-600'}`}>
+            {couponMsg.text}
+            </p>
+        )}
+        <p className="text-xs text-gray-400 mt-2">Try: <span className="font-mono">new100</span> or <span className="font-mono">moon200</span></p>
+    </div>
+
+    <div className="border-t border-gray-200 pt-4 space-y-2">
+      <div className="flex justify-between items-center text-gray-600">
+        <span className="text-base">Subtotal</span>
+        <span className="font-medium">₹{subtotal.toFixed(2)}</span>
+      </div>
+      
+      {discount > 0 && (
+        <div className="flex justify-between items-center text-green-600">
+          <span className="flex items-center text-base">
+            <Tag className="w-4 h-4 mr-1" />
+            Discount ({appliedCoupon})
+          </span>
+          <span className="font-medium">- ₹{discount.toFixed(2)}</span>
+        </div>
+      )}
+
+      <div className="flex justify-between items-center pt-2 border-t mt-2">
         <span className="text-xl font-medium text-gray-900">Total</span>
         <span className="text-3xl font-bold text-gray-900">
           ₹{total.toFixed(2)}
@@ -434,15 +513,399 @@ const StatusPill = ({ status, isBooking = false }) => {
 };
 
 // =================================================================
-// 4. PAGE/LARGE BLOCK COMPONENTS
+// 4. ADMIN COMPONENTS
 // =================================================================
 
-// NEW: Product Detail Modal with Carousel
-const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
+const AdminDashboard = ({ db, user, setModal }) => {
+  const [activeTab, setActiveTab] = useState('orders'); // orders, bookings, products
+  const [orders, setOrders] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // --- Data Fetching ---
+  useEffect(() => {
+    if (!db) return;
+    
+    // Fetch Orders
+    const ordersUnsubscribe = onSnapshot(query(collection(db, 'admin_orders')), (snapshot) => {
+       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+       // Sort locally since we might not have composite index
+       data.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+       setOrders(data);
+    });
+
+    // Fetch Bookings
+    const bookingsUnsubscribe = onSnapshot(query(collection(db, 'admin_bookings')), (snapshot) => {
+       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+       data.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+       setBookings(data);
+    });
+
+    // Fetch Products
+    const productsUnsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+       setProducts(data);
+    });
+
+    return () => {
+      ordersUnsubscribe();
+      bookingsUnsubscribe();
+      productsUnsubscribe();
+    }
+  }, [db]);
+
+  // --- Handlers ---
+
+  const handleUpdateOrderStatus = async (orderId, userId, newStatus) => {
+    if (!db) return;
+    try {
+      // 1. Update Admin Copy
+      const adminRef = doc(db, 'admin_orders', orderId);
+      await updateDoc(adminRef, { status: newStatus });
+
+      // 2. Update User Copy (if userId exists)
+      if (userId) {
+        const userRef = doc(db, 'users', userId, 'orders', orderId);
+        await updateDoc(userRef, { status: newStatus });
+      }
+      
+      setModal({ title: "Success", body: `Order status updated to ${newStatus}` });
+    } catch (error) {
+      console.error("Update Error:", error);
+      setModal({ title: "Error", body: "Failed to update order status." });
+    }
+  };
+
+  const handleUpdateBookingStatus = async (bookingId, userId, newStatus) => {
+    if (!db) return;
+    try {
+      const adminRef = doc(db, 'admin_bookings', bookingId);
+      await updateDoc(adminRef, { status: newStatus });
+
+      if (userId) {
+        const userRef = doc(db, 'users', userId, 'bookings', bookingId);
+        await updateDoc(userRef, { status: newStatus });
+      }
+      setModal({ title: "Success", body: `Booking marked as ${newStatus}` });
+    } catch (error) {
+      console.error("Update Error:", error);
+      setModal({ title: "Error", body: "Failed to update booking status." });
+    }
+  };
+
+  const handleProductSave = async (productData, isEdit = false, productId = null) => {
+    if (!db) return;
+    try {
+      if (isEdit && productId) {
+        await setDoc(doc(db, 'products', productId), productData, { merge: true });
+        setModal({ title: "Success", body: "Product updated successfully." });
+      } else {
+        // Create a slug ID from name
+        const id = productData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        await setDoc(doc(db, 'products', id), productData);
+        setModal({ title: "Success", body: "New product added." });
+      }
+    } catch (error) {
+       console.error("Product Save Error:", error);
+       setModal({ title: "Error", body: "Failed to save product." });
+    }
+  };
+
+  const handleDeleteProduct = async (productId) => {
+    if (!db) return;
+    if (!window.confirm("Are you sure you want to delete this product?")) return;
+    try {
+      await deleteDoc(doc(db, 'products', productId));
+      setModal({ title: "Deleted", body: "Product removed." });
+    } catch (error) {
+      setModal({ title: "Error", body: "Could not delete product." });
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8 animate-fadeIn">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+          <Shield className="w-8 h-8 text-pink-600 mr-3" />
+          Admin Dashboard
+        </h1>
+        <p className="text-gray-500">Welcome back, Admin.</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-4 border-b border-gray-200 mb-8 overflow-x-auto">
+        {['orders', 'bookings', 'products'].map(tab => (
+           <button
+             key={tab}
+             onClick={() => setActiveTab(tab)}
+             className={`pb-3 px-4 text-sm font-medium capitalize whitespace-nowrap ${
+               activeTab === tab 
+                 ? 'border-b-2 border-pink-500 text-pink-600' 
+                 : 'text-gray-500 hover:text-gray-700'
+             }`}
+           >
+             {tab}
+           </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="bg-white rounded-lg shadow min-h-[400px]">
+        {activeTab === 'orders' && (
+          <AdminOrderList orders={orders} onUpdateStatus={handleUpdateOrderStatus} />
+        )}
+        {activeTab === 'bookings' && (
+           <AdminBookingList bookings={bookings} onUpdateStatus={handleUpdateBookingStatus} />
+        )}
+        {activeTab === 'products' && (
+           <AdminProductManager 
+             products={products} 
+             onSave={handleProductSave} 
+             onDelete={handleDeleteProduct} 
+           />
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AdminOrderList = ({ orders, onUpdateStatus }) => {
+  if (orders.length === 0) return <div className="p-8 text-center text-gray-500">No orders yet.</div>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {orders.map((order) => (
+            <tr key={order.id}>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#{order.id.substring(0,6)}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                {order.customer?.name} <br/>
+                <span className="text-xs text-gray-400">{order.customer?.phone}</span>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{order.total.toFixed(2)}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</td>
+              <td className="px-6 py-4 whitespace-nowrap">
+                <StatusPill status={order.status} />
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <select 
+                  className="border-gray-300 rounded text-sm p-1"
+                  value={order.status}
+                  onChange={(e) => onUpdateStatus(order.id, order.userId, e.target.value)}
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Shipped">Shipped</option>
+                  <option value="Delivered">Delivered</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const AdminBookingList = ({ bookings, onUpdateStatus }) => {
+  if (bookings.length === 0) return <div className="p-8 text-center text-gray-500">No bookings yet.</div>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {bookings.map((booking) => (
+            <tr key={booking.id}>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 capitalize">{booking.service.replace('_', ' ')}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(booking.date).toLocaleDateString()}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                 {booking.name}<br/>
+                 <span className="text-xs">{booking.phone}</span>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap">
+                 <StatusPill status={booking.status} isBooking={true} />
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                 <div className="flex space-x-2">
+                   <button 
+                     onClick={() => onUpdateStatus(booking.id, booking.customer.uid, 'confirmed')}
+                     className="text-green-600 hover:text-green-900 bg-green-50 px-2 py-1 rounded"
+                   >
+                     Confirm
+                   </button>
+                   <button 
+                     onClick={() => onUpdateStatus(booking.id, booking.customer.uid, 'rejected')}
+                     className="text-red-600 hover:text-red-900 bg-red-50 px-2 py-1 rounded"
+                   >
+                     Reject
+                   </button>
+                 </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const AdminProductManager = ({ products, onSave, onDelete }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: ''
+  });
+
+  const handleEdit = (product) => {
+    setFormData({
+      name: product.name,
+      price: product.price,
+      originalPrice: product.originalPrice || '',
+      category: product.category,
+      imageUrl: product.imageUrl,
+      description: product.description || ''
+    });
+    setEditId(product.id);
+    setIsEditing(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditId(null);
+    setFormData({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '' });
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const payload = {
+      ...formData,
+      price: parseFloat(formData.price),
+      originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : null,
+    };
+    onSave(payload, isEditing, editId);
+    handleCancel();
+  };
+
+  return (
+    <div className="p-6">
+      {/* Form */}
+      <div className="bg-gray-50 p-6 rounded-lg mb-8 border border-gray-200">
+        <h3 className="text-lg font-bold text-gray-900 mb-4">{isEditing ? 'Edit Product' : 'Add New Product'}</h3>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input 
+            placeholder="Product Name" 
+            className="p-2 border rounded" 
+            required
+            value={formData.name}
+            onChange={e => setFormData({...formData, name: e.target.value})}
+          />
+          <select 
+            className="p-2 border rounded bg-white"
+            value={formData.category}
+            onChange={e => setFormData({...formData, category: e.target.value})}
+          >
+            <option value="Press-Ons">Press-Ons</option>
+            <option value="Polish">Polish</option>
+            <option value="Gel">Gel</option>
+            <option value="Bridal">Bridal</option>
+            <option value="Polish Set">Polish Set</option>
+          </select>
+          <input 
+            type="number" 
+            placeholder="Price (₹)" 
+            className="p-2 border rounded" 
+            required
+            value={formData.price}
+            onChange={e => setFormData({...formData, price: e.target.value})}
+          />
+          <input 
+            type="number" 
+            placeholder="Original Price (Optional)" 
+            className="p-2 border rounded" 
+            value={formData.originalPrice}
+            onChange={e => setFormData({...formData, originalPrice: e.target.value})}
+          />
+          <input 
+            placeholder="Image URL" 
+            className="p-2 border rounded md:col-span-2" 
+            required
+            value={formData.imageUrl}
+            onChange={e => setFormData({...formData, imageUrl: e.target.value})}
+          />
+          <textarea 
+            placeholder="Description" 
+            className="p-2 border rounded md:col-span-2" 
+            rows="3"
+            value={formData.description}
+            onChange={e => setFormData({...formData, description: e.target.value})}
+          />
+          <div className="md:col-span-2 flex gap-2">
+            <button type="submit" className="bg-pink-600 text-white px-4 py-2 rounded hover:bg-pink-700 flex items-center">
+              <Save className="w-4 h-4 mr-2" /> {isEditing ? 'Update Product' : 'Add Product'}
+            </button>
+            {isEditing && (
+              <button type="button" onClick={handleCancel} className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400">
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      {/* List */}
+      <h3 className="text-lg font-bold text-gray-900 mb-4">Product Catalog</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {products.map(product => (
+          <div key={product.id} className="border rounded-lg p-4 flex gap-4 bg-white items-start">
+             <img src={product.imageUrl} className="w-20 h-20 object-cover rounded bg-gray-100" alt={product.name} />
+             <div className="flex-1 min-w-0">
+               <h4 className="font-semibold text-gray-900 truncate">{product.name}</h4>
+               <p className="text-pink-600 font-bold">₹{product.price}</p>
+               <div className="flex gap-2 mt-2">
+                 <button onClick={() => handleEdit(product)} className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">
+                   <Edit className="w-4 h-4" />
+                 </button>
+                 <button onClick={() => onDelete(product.id)} className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100">
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+               </div>
+             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// =================================================================
+// 5. PAGE/LARGE BLOCK COMPONENTS
+// =================================================================
+
+const ProductDetailModal = ({ product, onClose, onAddToCart, onToggleWishlist, isWishlisted }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
-  // Use the new 'images' array if available, otherwise fallback to single 'imageUrl'
-  // Also ensures it's an array to prevent errors
   const images = Array.isArray(product.images) && product.images.length > 0 
     ? product.images 
     : [product.imageUrl];
@@ -458,10 +921,7 @@ const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4 animate-fadeIn">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]">
-        
-        {/* Left Side: Image Carousel */}
         <div className="w-full md:w-1/2 bg-gray-100 relative flex items-center justify-center p-4">
-           {/* Close button for mobile */}
            <button 
              onClick={onClose}
              className="md:hidden absolute top-4 right-4 bg-white rounded-full p-2 shadow-md z-10 text-gray-600 hover:text-pink-600"
@@ -477,7 +937,6 @@ const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
                onError={(e) => { e.target.src = 'https://placehold.co/600x600/E0E0E0/B0B0B0?text=Image+Error'; }}
              />
 
-             {/* Navigation Arrows - Only show if multiple images */}
              {images.length > 1 && (
                <>
                  <button 
@@ -497,7 +956,6 @@ const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
                </>
              )}
 
-             {/* Dots Indicator */}
              {images.length > 1 && (
                <div className="absolute bottom-4 flex space-x-2 bg-black/20 p-2 rounded-full backdrop-blur-sm">
                  {images.map((_, idx) => (
@@ -513,19 +971,28 @@ const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
            </div>
         </div>
 
-        {/* Right Side: Details */}
         <div className="w-full md:w-1/2 p-8 overflow-y-auto relative">
           <button 
              onClick={onClose}
-             className="hidden md:block absolute top-6 right-6 text-gray-400 hover:text-gray-600 transition-colors"
+             className="hidden md:block absolute top-6 right-6 text-gray-400 hover:text-gray-600 transition-colors z-10"
            >
              <X className="w-8 h-8" />
            </button>
 
-          <div className="mb-2">
-            <span className="text-sm font-semibold tracking-wider text-pink-600 uppercase bg-pink-50 px-3 py-1 rounded-full">
-              {product.category}
-            </span>
+          {/* Added pr-12 to create space between the Wishlist icon and the Close button */}
+          <div className="flex justify-between items-start mb-4 pr-12">
+            <div className="mb-2">
+              <span className="text-sm font-semibold tracking-wider text-pink-600 uppercase bg-pink-50 px-3 py-1 rounded-full">
+                {product.category}
+              </span>
+            </div>
+            <button 
+              onClick={() => onToggleWishlist(product)}
+              className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${isWishlisted ? 'text-red-500' : 'text-gray-400'}`}
+              title={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"}
+            >
+              <Heart className={`w-6 h-6 ${isWishlisted ? 'fill-current' : ''}`} />
+            </button>
           </div>
 
           <h2 className="text-3xl font-bold text-gray-900 mb-4">{product.name}</h2>
@@ -570,16 +1037,14 @@ const ProductDetailModal = ({ product, onClose, onAddToCart }) => {
   );
 };
 
-
-const ProductCard = memo(({ product, onAddToCart, onProductClick }) => {
+const ProductCard = memo(({ product, onAddToCart, onProductClick, isWishlisted, onToggleWishlist }) => {
   const originalPriceDisplay = 999.00;
   
   return (
     <div 
       onClick={() => onProductClick(product)}
-      className="bg-white rounded-lg shadow-md overflow-hidden transform transition-transform duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer group flex flex-col h-full"
+      className="bg-white rounded-lg shadow-md overflow-hidden transform transition-transform duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer group flex flex-col h-full relative"
     >
-      {/* Fixed height container for the image */}
       <div className="relative h-64 overflow-hidden flex-shrink-0">
         <img 
           src={product.imageUrl} 
@@ -593,6 +1058,16 @@ const ProductCard = memo(({ product, onAddToCart, onProductClick }) => {
              <Sparkles className="w-3 h-3 mr-1 text-pink-500" /> View Details
            </span>
         </div>
+        {/* Heart Icon on Card */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleWishlist(product);
+          }}
+          className={`absolute top-2 right-2 p-2 rounded-full bg-white/80 hover:bg-white shadow-sm transition-all z-10 ${isWishlisted ? 'text-red-500' : 'text-gray-400 hover:text-pink-500'}`}
+        >
+          <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-current' : ''}`} />
+        </button>
       </div>
 
       <div className="p-4 flex flex-col flex-1">
@@ -620,11 +1095,11 @@ const Header = ({
   setPage, 
   cartCount, 
   user, 
-  onSeedData, // Fixed: Uncommented onSeedData
   isMobileMenuOpen, 
   setMobileMenuMenuOpen,
   onSignInClick, 
-  onSignOut 
+  onSignOut,
+  isAdmin 
 }) => {
   const NavLink = ({ page, label, icon: Icon }) => (
     <button
@@ -706,6 +1181,24 @@ const Header = ({
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
+            {isAdmin && (
+               <button
+                 onClick={() => setPage('admin')}
+                 className="flex items-center bg-gray-900 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 transition-colors"
+               >
+                 <LayoutDashboard className="w-4 h-4 mr-2" />
+                 Admin
+               </button>
+            )}
+            {/* Wishlist Button */}
+            <button
+              onClick={() => setPage('wishlist')}
+              className="text-gray-600 hover:text-pink-600 p-2 rounded-full hover:bg-pink-50 transition-colors"
+              title="My Wishlist"
+            >
+              <Heart className="w-6 h-6" />
+            </button>
+
             <button
               onClick={() => {
                 setPage('cart');
@@ -720,14 +1213,6 @@ const Header = ({
               )}
             </button>
             {renderAuthControls(false)}
-            
-            <button
-              onClick={onSeedData}
-              title="Seed Sample Products (Reset DB)"
-              className="text-gray-500 hover:text-blue-600 p-2 rounded-full bg-gray-100 hover:bg-blue-100 transition-colors"
-            >
-              <Database className="w-5 h-5" />
-            </button>
           </div>
 
           <div className="md:hidden flex items-center">
@@ -760,18 +1245,11 @@ const Header = ({
             <NavLink page="home" label="Home" icon={Home} />
             <NavLink page="products" label="Nail Products" icon={ShoppingBag} />
             <NavLink page="bridal" label="Bridal Booking" icon={Calendar} />
+            <NavLink page="wishlist" label="My Wishlist" icon={Heart} />
+            {isAdmin && <NavLink page="admin" label="Admin Dashboard" icon={LayoutDashboard} />}
           </div>
           <div className="border-t border-gray-200 pt-4 pb-3 px-2 space-y-2">
              {renderAuthControls(true)}
-             
-             <button
-              onClick={onSeedData}
-              title="Seed Sample Products"
-              className="w-full text-left flex items-center px-3 py-2 text-gray-500 hover:text-blue-600"
-            >
-              <Database className="w-5 h-5 mr-2" />
-              Seed Sample Products
-            </button>
           </div>
         </div>
       )}
@@ -796,14 +1274,12 @@ const Footer = () => (
   </footer>
 );
 
-const HomePage = ({ products, setPage, onAddToCart, onProductClick }) => (
+const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
   <div className="animate-fadeIn">
-    {/* Hero Section */}
     <div className="relative bg-gradient-to-r from-pink-50 via-white to-pink-50 text-center py-24 px-4 h-[60vh] flex flex-col items-center justify-center">
       <img 
         src="https://placehold.co/1200x600/FCE7F3/8B5E5E?text=MOONZNAILS"
         alt="Bridal makeup and nails"
-        // Priority image, no lazy loading
         className="absolute inset-0 w-full h-full object-cover opacity-30"
       />
       <div className="relative z-10">
@@ -830,23 +1306,24 @@ const HomePage = ({ products, setPage, onAddToCart, onProductClick }) => (
       </div>
     </div>
 
-    {/* Featured Products */}
     <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
       <h2 className="text-3xl font-extrabold text-center text-gray-900 mb-12">
         Featured Products
       </h2>
       {products.length === 0 ? (
          <p className="text-center text-gray-500">
-           No products found. (Try the 'Seed Data' Database button in the header!)
+           No products found. Use the Admin Dashboard to add products.
          </p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch"> {/* Added items-stretch for equal height */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch">
           {products.slice(0, 4).map((product) => (
             <ProductCard 
               key={product.id} 
               product={product} 
               onAddToCart={onAddToCart}
               onProductClick={onProductClick}
+              isWishlisted={wishlist.some(item => item.id === product.id)}
+              onToggleWishlist={onToggleWishlist}
             />
           ))}
         </div>
@@ -855,29 +1332,77 @@ const HomePage = ({ products, setPage, onAddToCart, onProductClick }) => (
   </div>
 );
 
-const ProductListPage = ({ products, onAddToCart, onProductClick }) => (
+const ProductListPage = ({ products, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
   <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
     <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
       Shop All Nail Products
     </h1>
     {products.length === 0 ? (
        <p className="text-center text-gray-500">
-         No products found. (Try the 'Seed Data' Database button in the header!)
+         No products found. Use the Admin Dashboard to add products.
        </p>
     ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-stretch"> {/* Added items-stretch */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-stretch">
         {products.map((product) => (
           <ProductCard 
             key={product.id} 
             product={product} 
             onAddToCart={onAddToCart} 
             onProductClick={onProductClick}
+            isWishlisted={wishlist.some(item => item.id === product.id)}
+            onToggleWishlist={onToggleWishlist}
           />
         ))}
       </div>
     )}
   </div>
 );
+
+// ADDED: WishlistPage Component Definition
+const WishlistPage = ({ wishlist, onAddToCart, onProductClick, onToggleWishlist, setPage, user }) => {
+  if (!user) {
+    return (
+      <div className="max-w-4xl mx-auto py-16 px-4 sm:px-6 lg:px-8 animate-fadeIn text-center">
+        <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Your Wishlist</h1>
+        <p className="text-lg text-gray-600 mb-8">Please sign in to save your favorite items.</p>
+        <Heart className="w-20 h-20 text-gray-200 mx-auto mb-6" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
+      <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
+        My Wishlist
+      </h1>
+      {wishlist.length === 0 ? (
+        <div className="text-center">
+          <Heart className="w-20 h-20 text-gray-200 mx-auto mb-6" />
+          <p className="text-gray-500 text-lg mb-6">Your wishlist is empty.</p>
+          <button 
+            onClick={() => setPage('products')}
+            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-pink-600 hover:bg-pink-700"
+          >
+            Start Shopping
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-stretch">
+          {wishlist.map((product) => (
+            <ProductCard 
+              key={product.id} 
+              product={product} 
+              onAddToCart={onAddToCart} 
+              onProductClick={onProductClick}
+              isWishlisted={true}
+              onToggleWishlist={onToggleWishlist}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CartPage = ({ cartItems, onRemoveFromCart, onCheckout, onGenerateIdeas, user }) => {
   const total = useMemo(() => {
@@ -962,10 +1487,15 @@ const CartPage = ({ cartItems, onRemoveFromCart, onCheckout, onGenerateIdeas, us
   );
 };
 
-// UPDATED: Accepting setModal as prop to show errors
-const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
+const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders }) => {
   const [step, setStep] = useState(1); 
   const [paymentMethod, setPaymentMethod] = useState('COD'); 
+  
+  // Coupon State
+  const [couponCode, setCouponCode] = useState('');
+  const [discount, setDiscount] = useState(0);
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponMsg, setCouponMsg] = useState({ type: '', text: '' });
 
   const [customerDetails, setCustomerDetails] = useState({
     name: user?.displayName || '',
@@ -981,9 +1511,53 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
     landmark: '',
   });
   
-  const total = useMemo(() => {
+  const subtotal = useMemo(() => {
     return cartItems.reduce((sum, item) => sum + (item.price || 0), 0);
   }, [cartItems]);
+  
+  const total = useMemo(() => {
+    return Math.max(0, subtotal - discount);
+  }, [subtotal, discount]);
+
+  const handleApplyCoupon = (e) => {
+    e.preventDefault();
+    const code = couponCode.trim().toLowerCase();
+    
+    // Reset state
+    setCouponMsg({ type: '', text: '' });
+    setDiscount(0);
+    setAppliedCoupon(null);
+    
+    if (!code) return;
+
+    if (code === 'moon200') {
+      if (subtotal > 1000) {
+        setAppliedCoupon('moon200');
+        setDiscount(200);
+        setCouponMsg({ type: 'success', text: 'Success! ₹200 off applied.' });
+      } else {
+        setCouponMsg({ type: 'error', text: 'Coupon "moon200" is only valid for orders above ₹1000.' });
+      }
+    } else if (code === 'new100') {
+      // Check order history. If 0 orders or undefined (loading), valid.
+      if (!userOrders || userOrders.length === 0) {
+        setAppliedCoupon('new100');
+        setDiscount(100);
+        setCouponMsg({ type: 'success', text: 'Welcome! ₹100 off your first order applied.' });
+      } else {
+        setCouponMsg({ type: 'error', text: 'Coupon "new100" is only valid for your first order.' });
+      }
+    } else {
+      setCouponMsg({ type: 'error', text: 'Invalid coupon code.' });
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setDiscount(0);
+    setCouponCode('');
+    setCouponMsg({ type: '', text: '' });
+  };
 
   const handleCustomerChange = (e) => {
     const { name, value } = e.target;
@@ -1030,7 +1604,6 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
 
-    // UPDATED: Logic to block UPI/Card payments
     if (paymentMethod !== 'COD') {
        setModal({
          title: "Payment Unavailable",
@@ -1043,6 +1616,9 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
       customer: customerDetails,
       address: addressDetails,
       paymentMethod: paymentMethod,
+      subtotal: subtotal,
+      discount: discount,
+      couponCode: appliedCoupon,
       total: total,
       status: "Pending" 
     };
@@ -1214,6 +1790,50 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
           {step === 3 && (
             <form onSubmit={handlePaymentSubmit} className="space-y-6">
               <h2 className="text-2xl font-semibold text-gray-900 mb-6">3. Payment & Confirm</h2>
+              
+              {/* RE-ADDED COUPON SECTION TO PAYMENT STEP */}
+              <div className="bg-pink-50 border border-pink-200 rounded-lg p-5 mb-6">
+                <div className="flex items-center mb-3">
+                   <Ticket className="w-5 h-5 text-pink-600 mr-2" />
+                   <h3 className="font-bold text-gray-900">Have a coupon?</h3>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value)}
+                    placeholder="Enter coupon code (e.g. new100)"
+                    className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-pink-500 focus:border-pink-500 sm:text-sm p-2 bg-white"
+                    disabled={appliedCoupon !== null}
+                  />
+                  {appliedCoupon ? (
+                    <button
+                      type="button"
+                      onClick={removeCoupon}
+                      className="px-4 py-2 bg-red-100 text-red-700 rounded-md font-medium hover:bg-red-200 transition-colors text-sm"
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-md font-medium hover:bg-pink-600 transition-colors text-sm"
+                    >
+                      Apply
+                    </button>
+                  )}
+                </div>
+                {couponMsg.text && (
+                  <p className={`mt-2 text-sm ${couponMsg.type === 'success' ? 'text-green-600 font-bold' : 'text-red-600'}`}>
+                    {couponMsg.text}
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 mt-2">
+                  Try codes: <span className="font-mono bg-white px-1 rounded border">new100</span> (First Order) or <span className="font-mono bg-white px-1 rounded border">moon200</span> (Orders &gt; ₹1000)
+                </p>
+              </div>
+
               <div className="space-y-4">
                 <PaymentOption value="COD" label="Cash on Delivery (COD)" icon={Truck} />
                 <PaymentOption value="UPI" label="PhonePe / Google Pay / UPI" icon={Smartphone} />
@@ -1247,7 +1867,18 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal }) => {
         </div>
 
         <div className="md:col-span-1">
-          <OrderSummary cartItems={cartItems} total={total} />
+          <OrderSummary 
+            cartItems={cartItems} 
+            subtotal={subtotal} 
+            discount={discount} 
+            total={total}
+            appliedCoupon={appliedCoupon}
+            couponCode={couponCode}
+            setCouponCode={setCouponCode}
+            handleApplyCoupon={handleApplyCoupon}
+            couponMsg={couponMsg}
+            removeCoupon={removeCoupon}
+          />
         </div>
 
       </div>
@@ -1293,6 +1924,9 @@ const OrderDetailView = ({ order, onBack, onCancelOrder, setModal }) => {
         <div className="md:col-span-1 space-y-4">
           <div className="p-5 border rounded-lg bg-pink-50">
             <h3 className="text-lg font-semibold text-pink-800">Total: ₹{order.total.toFixed(2)}</h3>
+            {order.discount > 0 && (
+              <p className="text-xs text-green-600 font-medium">Includes discount: ₹{order.discount}</p>
+            )}
             <p className="text-sm text-pink-600">Paid via: {order.paymentMethod === 'COD' ? 'Cash on Delivery' : order.paymentMethod}</p>
           </div>
           
@@ -1368,7 +2002,6 @@ const BookingsListView = ({ userOrders, setPage }) => {
   };
 
 const AccountPage = ({ user, userOrders, userBookings, onSignOut, setPage, onCancelOrder, setModal }) => {
-  // FIX: Changed default view from 'bookings' to 'orders'
   const [view, setView] = useState('orders'); 
   const [selectedOrder, setSelectedOrder] = useState(null);
 
@@ -1564,7 +2197,6 @@ const OurWorksSection = ({ onPostClick }) => (
 const PostDetailModal = ({ post, onClose, setPage }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  // Safety check: Ensure images array exists
   const images = post.images || [post.imageUrl];
 
   const nextImage = () => {
@@ -1826,7 +2458,7 @@ const BridalBookingPage = ({ onBookingSubmit, setIsLoading, setModal, isLoading,
                   value={formData.date}
                   onChange={handleChange}
                   required
-                  min={today} // Restrict past dates
+                  min={today}
                   className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-pink-500 focus:border-pink-500 sm:text-sm p-2"
                 />
               </div>
@@ -1892,19 +2524,22 @@ export default function App() {
   const [page, setPage] = useState('home'); 
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]); // New Wishlist State
   const [orders, setOrders] = useState([]); 
   const [bookings, setBookings] = useState([]); 
   const [modal, setModal] =useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSignInModalOpen, setSignInModalOpen] = useState(false);
   
-  // NEW STATE: Selected Product for Detail View
   const [selectedProduct, setSelectedProduct] = useState(null);
   
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [user, setUser] = useState(null); 
   const [isAuthReady, setIsAuthReady] = useState(false);
+  
+  // ADMIN CHECK
+  const isAdmin = user && user.email === ADMIN_EMAIL;
 
   const [isMobileMenuOpen, setMobileMenuMenuOpen] = useState(false);
   
@@ -1919,6 +2554,12 @@ export default function App() {
   const userCartColRef = useMemo(() => {
     if (!db || !userId) return null;
     return collection(db, 'users', userId, 'cart');
+  }, [db, userId]);
+
+  // New Wishlist Collection Ref
+  const userWishlistColRef = useMemo(() => {
+    if (!db || !userId) return null;
+    return collection(db, 'users', userId, 'wishlist');
   }, [db, userId]);
 
   const userBookingsColRef = useMemo(() => {
@@ -1960,7 +2601,7 @@ export default function App() {
       
       const authInstance = getAuth(app);
       const dbInstance = getFirestore(app);
-      setLogLevel('silent'); // OPTIMIZED: Reduce console noise
+      setLogLevel('silent');
       
       setAuth(authInstance);
       setDb(dbInstance);
@@ -1982,7 +2623,6 @@ export default function App() {
     }
   }, []);
 
-  // OPTIMIZED: Removed 'user' from dependency array. Products are public.
   useEffect(() => {
     if (!productsColRef) return;
 
@@ -1999,6 +2639,27 @@ export default function App() {
 
     return () => unsubscribe();
   }, [productsColRef]); 
+
+  // Wishlist Sync Effect
+  useEffect(() => {
+    if (!userWishlistColRef) {
+      setWishlist([]);
+      return;
+    }
+
+    const q = query(userWishlistColRef);
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const wishlistData = [];
+      querySnapshot.forEach((doc) => {
+        wishlistData.push({ id: doc.id, ...doc.data() });
+      });
+      setWishlist(wishlistData);
+    }, (error) => {
+      console.error("Error fetching wishlist:", error);
+    });
+
+    return () => unsubscribe();
+  }, [userWishlistColRef]);
 
   useEffect(() => {
     if (!userCartColRef) {
@@ -2096,6 +2757,33 @@ export default function App() {
     }
   };
   
+  // Wishlist Toggle Handler
+  const handleToggleWishlist = useCallback(async (product) => {
+    if (!user) {
+      setSignInModalOpen(true);
+      return;
+    }
+
+    if (!userWishlistColRef) return;
+
+    const isWishlisted = wishlist.some(item => item.id === product.id);
+
+    try {
+      if (isWishlisted) {
+        // Remove
+        await deleteDoc(doc(userWishlistColRef, product.id));
+      } else {
+        // Add (Use product ID as doc ID for easy deduplication)
+        // Exclude ID from data being saved to avoid nesting ID inside data
+        const { id, ...productData } = product;
+        await setDoc(doc(userWishlistColRef, product.id), productData);
+      }
+    } catch (error) {
+      console.error("Error toggling wishlist:", error);
+      setModal({ title: "Error", body: "Could not update wishlist." });
+    }
+  }, [user, userWishlistColRef, wishlist]);
+
   const handleAddToCart = useCallback(async (product) => {
     if (!user) {
       setSignInModalOpen(true);
@@ -2146,7 +2834,6 @@ export default function App() {
   const handleConfirmOrder = useCallback(async (orderDetails) => {
     if (!userCartColRef || !userOrdersColRef || !adminOrdersColRef) return; 
 
-    // CHECK 2: Blocking at function level as well
     if (orderDetails.paymentMethod !== 'COD') {
        setModal({
          title: "Payment Unavailable",
@@ -2259,34 +2946,6 @@ export default function App() {
     }
   }, [user, userBookingsColRef, adminBookingsColRef, setPage]);
   
-  const seedProductData = useCallback(async () => {
-    if (!productsColRef) {
-       setModal({ title: "Error", body: "Database not ready." });
-       return;
-    }
-    
-    setModal({ title: "Seeding...", body: "Updating database with new products..." });
-    
-    try {
-      const batch = writeBatch(db);
-      
-      for (const product of DUMMY_PRODUCTS) {
-        const simpleNameId = product.name.toLowerCase().replace(/\s+/g, '-');
-        const docRef = doc(productsColRef, simpleNameId);
-        
-        // OVERWRITE existing product to ensure new fields (images array) are added
-        batch.set(docRef, product);
-      }
-      
-      await batch.commit();
-      
-      setModal({ title: "Success!", body: "Products have been updated in the database." });
-    } catch (error) {
-      console.error("Error seeding data: ", error);
-      setModal({ title: "Error", body: `Failed to seed products: ${error.message}` });
-    }
-  }, [db, productsColRef]);
-
   
   const handleGenerateCartIdeas = async (currentCartItems) => { 
     if (currentCartItems.length === 0) {
@@ -2336,6 +2995,8 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   products={products} 
                   onAddToCart={handleAddToCart}
                   onProductClick={setSelectedProduct} 
+                  wishlist={wishlist}
+                  onToggleWishlist={handleToggleWishlist}
                 />;
       case 'bridal':
         return <BridalBookingPage 
@@ -2353,6 +3014,15 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   onGenerateIdeas={handleGenerateCartIdeas}
                   user={user} 
                 />;
+      case 'wishlist':
+        return <WishlistPage 
+                  wishlist={wishlist}
+                  onAddToCart={handleAddToCart} 
+                  onProductClick={setSelectedProduct}
+                  onToggleWishlist={handleToggleWishlist}
+                  setPage={setPage}
+                  user={user}
+                />;
       case 'checkout':
         if (cart.length === 0) {
           setPage('products'); 
@@ -2360,13 +3030,16 @@ Based on my cart, suggest 3 other products I might love from the available list.
                     products={products} 
                     onAddToCart={handleAddToCart} 
                     onProductClick={setSelectedProduct}
+                    wishlist={wishlist}
+                    onToggleWishlist={handleToggleWishlist}
                  />;
         }
         return <CheckoutPage
                   cartItems={cart}
                   onConfirmOrder={handleConfirmOrder}
                   user={user} 
-                  setModal={setModal} // Passed setModal to CheckoutPage
+                  setModal={setModal}
+                  userOrders={orders} 
                 />;
       case 'account':
         if (!user) {
@@ -2377,6 +3050,8 @@ Based on my cart, suggest 3 other products I might love from the available list.
                     setPage={setPage} 
                     onAddToCart={handleAddToCart} 
                     onProductClick={setSelectedProduct}
+                    wishlist={wishlist}
+                    onToggleWishlist={handleToggleWishlist}
                  />;
         }
         return <AccountPage 
@@ -2388,6 +3063,12 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   onCancelOrder={handleCancelOrder}
                   setModal={setModal} 
                 />;
+      case 'admin':
+        if (!isAdmin) {
+          setPage('home');
+          return <HomePage products={products} setPage={setPage} onAddToCart={handleAddToCart} onProductClick={setSelectedProduct} wishlist={wishlist} onToggleWishlist={handleToggleWishlist} />;
+        }
+        return <AdminDashboard db={db} user={user} setModal={setModal} />;
       case 'home':
       default:
         return <HomePage 
@@ -2395,6 +3076,8 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   setPage={setPage} 
                   onAddToCart={handleAddToCart}
                   onProductClick={setSelectedProduct} 
+                  wishlist={wishlist}
+                  onToggleWishlist={handleToggleWishlist}
                />;
     }
   };
@@ -2405,12 +3088,13 @@ Based on my cart, suggest 3 other products I might love from the available list.
   
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 font-inter">
-      {/* Product Detail Modal */}
       {selectedProduct && (
         <ProductDetailModal 
           product={selectedProduct} 
           onClose={() => setSelectedProduct(null)} 
           onAddToCart={handleAddToCart}
+          isWishlisted={wishlist.some(item => item.id === selectedProduct.id)}
+          onToggleWishlist={handleToggleWishlist}
         />
       )}
 
@@ -2445,11 +3129,11 @@ Based on my cart, suggest 3 other products I might love from the available list.
         setPage={setPage} 
         cartCount={cart.length} 
         user={user} 
-        onSeedData={seedProductData}
         isMobileMenuOpen={isMobileMenuOpen}
         setMobileMenuMenuOpen={setMobileMenuMenuOpen}
         onSignInClick={() => setSignInModalOpen(true)} 
-        onSignOut={handleSignOut} 
+        onSignOut={handleSignOut}
+        isAdmin={isAdmin}
       />
 
       <main className="flex-grow">
