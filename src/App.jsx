@@ -210,7 +210,11 @@ const FIREBASE_CONFIG = {
   measurementId: "G-EV5N2W4CN3"
 };
 
-const ADMIN_EMAIL = "omgupta111k@gmail.com";
+const ADMIN_EMAILS = [
+  "omgupta111k@gmail.com",
+  "themoonbeauty76@gmail.com",
+];
+
 
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", 
