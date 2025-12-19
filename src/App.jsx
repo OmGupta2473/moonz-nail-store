@@ -2651,7 +2651,7 @@ const BridalBookingPage = ({ onBookingSubmit, setIsLoading, setModal, isLoading,
       setIsLoading(false);
     } catch (error) {
       setIsLoading(false);
-      setModal({ title: "Error", body: `Could not generate message: ${error.message}` });
+      setModal({ title: "Error", body: `This feature is currently unavailable` });
     }
   };
 
@@ -3215,7 +3215,7 @@ Based on my cart, suggest 3 other products I might love from the available list.
     } catch (error) {
       console.error("Error generating recommendations:", error);
       setIsLoading(false);
-      setModal({ title: "Error", body: `Could not generate recommendations: ${error.message}` });
+      setModal({ title: "Error", body: `This feature is currently unavailable` });
     }
   };
 
