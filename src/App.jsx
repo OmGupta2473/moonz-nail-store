@@ -207,7 +207,6 @@ const FIREBASE_CONFIG = {
   storageBucket: "nail-store-3a798.firebasestorage.app",
   messagingSenderId: "546074655006",
   appId: "1:546074655006:web:e9b6312202275e4c3f310f",
-  measurementId: "G-EV5N2W4CN3"
 };
 
 const ADMIN_EMAILS = [
@@ -2599,7 +2598,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   
   // ADMIN CHECK
-  const isAdmin = ADMIN_EMAILS.has(user?.email);
+  const isAdmin = user && ADMIN_EMAILS.includes(user.email);
 
   const [isMobileMenuOpen, setMobileMenuMenuOpen] = useState(false);
   
