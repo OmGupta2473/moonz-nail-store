@@ -701,12 +701,12 @@ const AdminBookingList = ({ bookings, onUpdateStatus }) => (
 const AdminProductManager = ({ products, onSave, onDelete }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [formData, setFormData] = useState({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] });
+  const [formData, setFormData] = useState({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] });
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({ ...formData, price: parseFloat(formData.price), originalPrice: parseFloat(formData.originalPrice) || null, images: formData.images.filter(x => x) }, isEditing, editId);
-    setFormData({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] });
+    setFormData({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] });
     setIsEditing(false); setEditId(null);
   };
 
@@ -724,8 +724,33 @@ const AdminProductManager = ({ products, onSave, onDelete }) => {
                 <option key={o} value={o}>{o}</option>
               ))}
             </FormSelect>
-            <FormInput label="Price" name="price" type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required />
-            <FormInput label="Original Price" name="originalPrice" type="number" value={formData.originalPrice} onChange={e => setFormData({...formData, originalPrice: e.target.value})} />
+            <FormInput
+              label="Price"
+              name="price"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.price}
+              onChange={e => {
+                const value = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, price: value });
+              }}
+              required
+            />
+
+            <FormInput
+              label="Original Price"
+              name="originalPrice"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.originalPrice}
+              onChange={e => {
+                const value = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, originalPrice: value });
+              }}
+            />
+
           </div>
           <FormInput label="Main Image URL" name="imageUrl" value={formData.imageUrl} onChange={e => setFormData({...formData, imageUrl: e.target.value})} required />
           
@@ -1389,31 +1414,147 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
   </div>
 );
 
-const ProductListPage = ({ products, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
-  <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
-    <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
-      Shop All Nail Products
-    </h1>
-    {products.length === 0 ? (
-       <p className="text-center text-gray-500">
-         No products found. Use the Admin Dashboard to add products.
-       </p>
-    ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-stretch">
-        {products.map((product) => (
-          <ProductCard 
-            key={product.id} 
-            product={product} 
-            onAddToCart={onAddToCart} 
-            onProductClick={onProductClick}
-            isWishlisted={wishlist.some(item => item.id === product.id)}
-            onToggleWishlist={onToggleWishlist}
-          />
-        ))}
+const ProductListPage = ({
+  products,
+  onAddToCart,
+  onProductClick,
+  wishlist,
+  onToggleWishlist
+}) => {
+
+  // ================= FILTER STATE =================
+  const CATEGORIES = [
+    'All',
+    'Bridal',
+    'Party',
+    'Glitter',
+    'College Wear',
+    'Regular'
+  ];
+
+  const [selectedCategory, setSelectedCategory] = React.useState('All');
+  const [priceRange, setPriceRange] = React.useState({ min: '', max: '' });
+
+  const filteredProducts = React.useMemo(() => {
+    return products.filter(product => {
+      const categoryMatch =
+        selectedCategory === 'All' || product.category === selectedCategory;
+
+      const price = Number(product.price || 0);
+      const min = priceRange.min ? Number(priceRange.min) : 0;
+      const max = priceRange.max ? Number(priceRange.max) : Infinity;
+
+      return categoryMatch && price >= min && price <= max;
+    });
+  }, [products, selectedCategory, priceRange]);
+
+  // ================= RETURN JSX =================
+  return (
+    <div className="pt-24 pb-16">
+
+      {/* Heading */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
+          Shop All Nail Products
+        </h1>
       </div>
-    )}
-  </div>
-);
+
+
+      {/* Filter Section */}
+      <div className="mb-12">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm px-6 py-6">
+          <div className="flex flex-col sm:flex-row gap-6 items-end justify-between">
+
+            {/* Category */}
+            <div className="w-full sm:w-64">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                Category
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full rounded-2xl px-4 py-3 text-sm font-medium ring-1 ring-gray-200 focus:ring-2 focus:ring-pink-500 bg-white"
+              >
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Price */}
+            <div className="flex gap-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                  Min Price
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="₹0"
+                  value={priceRange.min}
+                  onChange={(e) =>
+                    setPriceRange({ ...priceRange, min: e.target.value.replace(/\D/g, '') })
+                  }
+                  className="w-32 rounded-2xl px-4 py-3 text-sm ring-1 ring-gray-200 focus:ring-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                  Max Price
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="₹9999"
+                  value={priceRange.max}
+                  onChange={(e) =>
+                    setPriceRange({ ...priceRange, max: e.target.value.replace(/\D/g, '') })
+                  }
+                  className="w-32 rounded-2xl px-4 py-3 text-sm ring-1 ring-gray-200 focus:ring-pink-500"
+                />
+              </div>
+            </div>
+
+            {/* Reset */}
+            <button
+              onClick={() => {
+                setSelectedCategory('All');
+                setPriceRange({ min: '', max: '' });
+              }}
+              className="px-8 py-3 rounded-2xl bg-gray-900 text-white text-sm font-semibold hover:bg-black"
+            >
+              Reset
+            </button>
+
+          </div>
+        </div>
+      </div>
+
+      {/* Product Grid */}
+      {filteredProducts.length === 0 ? (
+        <p className="text-center text-gray-500 py-20">
+          No products found. Try adjusting filters.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          {filteredProducts.map(product => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onAddToCart={onAddToCart}
+              onProductClick={onProductClick}
+              isWishlisted={wishlist.some(item => item.id === product.id)}
+              onToggleWishlist={onToggleWishlist}
+            />
+          ))}
+        </div>
+      )}
+
+    </div>
+  );
+};
+
 
 const WishlistPage = ({ wishlist, onAddToCart, onProductClick, onToggleWishlist, setPage, user }) => {
   if (!user) {
