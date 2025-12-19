@@ -2599,7 +2599,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   
   // ADMIN CHECK
-  const isAdmin = user && user.email === ADMIN_EMAIL;
+  const isAdmin = ADMIN_EMAILS.has(user?.email);
 
   const [isMobileMenuOpen, setMobileMenuMenuOpen] = useState(false);
   
