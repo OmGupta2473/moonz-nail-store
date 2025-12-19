@@ -987,7 +987,7 @@ const ProductDetailModal = ({ product, onClose, onAddToCart, onToggleWishlist, i
             <div className="grid grid-cols-3 gap-4 pt-8 border-t border-gray-100">
                <div className="text-center p-4 bg-gray-50 rounded-2xl">
                  <Truck className="w-6 h-6 text-gray-900 mx-auto mb-2" strokeWidth={1.5} />
-                 <span className="text-xs font-semibold text-gray-600 block">Fast Delivery</span>
+                 <span className="text-xs font-semibold text-gray-600 block"> 3-4 Days Delivery</span>
                </div>
                <div className="text-center p-4 bg-gray-50 rounded-2xl">
                  <CheckCircle className="w-6 h-6 text-gray-900 mx-auto mb-2" strokeWidth={1.5} />
@@ -1177,14 +1177,22 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
 
   return (
     <>
-      <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isScrolled ? 'bg-white/80 backdrop-blur-2xl border-b border-white/20 shadow-[0_2px_20px_rgba(0,0,0,0.02)] py-3' : 'bg-transparent py-6'}`}>
+      <nav className={`sticky top-0 w-full z-50 transition-all duration-300 ease-out
+  ${isScrolled
+          ? 'bg-white/80 backdrop-blur-2xl border-b border-white/20 shadow-[0_2px_20px_rgba(0,0,0,0.02)] py-3'
+          : 'bg-white/60 backdrop-blur-xl py-4'
+        }`}>
         <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex justify-between items-center">
             
             {/* Logo */}
             <div className="flex-1">
-              <button onClick={() => setPage('home')} className="flex items-center text-xl font-bold text-gray-900 tracking-tight z-50 relative">
-                <Sparkles className="w-5 h-5 text-pink-500 mr-2" strokeWidth={2.5} />
+              <button
+                onClick={() => setPage('home')}
+                className="flex items-center gap-2 text-xl font-bold text-gray-900 tracking-tight
+             px-2 py-1 rounded-lg
+             hover:opacity-90 active:scale-95 transition-all"
+              >
                 MOONZBEAUTY
               </button>
             </div>
@@ -1309,17 +1317,28 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
 // ... (HomePage, ProductListPage, WishlistPage, CartPage, CheckoutPage - Keep Existing Logic but ensure consistent Apple styling if touched, mostly fine as is from provided code, focusing on Account & Admin) ...
 // Re-inserting core pages for completeness
 
-const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
-  <div className="animate-fade-in">
-    <div className="relative h-[85vh] w-full overflow-hidden">
-      <div className="absolute inset-0">
-        <img 
-          src="https://res.cloudinary.com/dzxxtkn16/image/upload/v1766018071/ChatGPT_Image_Dec_18_2025_06_03_58_AM_bpwknn.png"
-          alt="Hero"
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40" />
-      </div>
+  const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
+    <div className="animate-fade-in">
+      <div className="relative h-[85vh] w-full overflow-hidden">
+        <div className="absolute inset-0">
+  <video
+    autoPlay
+    muted
+    loop
+    playsInline
+    preload="metadata"
+    poster="https://res.cloudinary.com/dzxxtkn16/video/upload/v1766159866/Luxury_Nail_Art_Landing_Page_Video_pfv7nu.mp4"
+    className="w-full h-full object-cover"
+  >
+    <source
+      src="https://res.cloudinary.com/dzxxtkn16/video/upload/v1766159866/Luxury_Nail_Art_Landing_Page_Video_pfv7nu.mp4"
+      type="video/mp4"
+    />
+  </video>
+
+  <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40" />
+</div>
+
       
       <div className="absolute inset-0 flex items-center justify-center text-center px-4">
         <div className="max-w-3xl space-y-8">
