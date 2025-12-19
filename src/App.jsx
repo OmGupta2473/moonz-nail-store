@@ -1228,7 +1228,7 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
             <div className="hidden md:flex flex-1 justify-center space-x-2 bg-white/50 backdrop-blur-md px-2 py-1.5 rounded-full border border-white/40 shadow-sm">
               <NavLink page="home" label="Home" />
               <NavLink page="products" label="Shop" />
-              <NavLink page="bridal" label="Bridal" />
+              <NavLink page="bridal" label="Makeup" />
             </div>
 
             {/* Right Icons & Mobile Toggle */}
@@ -1374,7 +1374,7 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
               Shop Collection
             </button>
             <button onClick={() => setPage('bridal')} className="px-8 py-4 bg-white/20 backdrop-blur-md text-white border border-white/30 rounded-full font-semibold text-lg hover:bg-white/30 transition-all hover:scale-105">
-              Book Bridal
+              Book Bridal Makeup
             </button>
           </div>
         </div>
@@ -3229,7 +3229,7 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   wishlist={wishlist}
                   onToggleWishlist={handleToggleWishlist}
                 />;
-      case 'bridal':
+      case 'makeup':
         return <BridalBookingPage 
                   onBookingSubmit={handleBookingSubmit} 
                   setIsLoading={setIsLoading}
