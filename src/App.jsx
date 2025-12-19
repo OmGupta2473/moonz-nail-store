@@ -3229,7 +3229,7 @@ Based on my cart, suggest 3 other products I might love from the available list.
                   wishlist={wishlist}
                   onToggleWishlist={handleToggleWishlist}
                 />;
-      case 'makeup':
+      case 'bridal':
         return <BridalBookingPage 
                   onBookingSubmit={handleBookingSubmit} 
                   setIsLoading={setIsLoading}
