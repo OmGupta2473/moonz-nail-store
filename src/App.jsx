@@ -720,7 +720,9 @@ const AdminProductManager = ({ products, onSave, onDelete }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormInput label="Name" name="name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
             <FormSelect label="Category" name="category" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-               {['Press-Ons', 'Polish', 'Gel', 'Bridal', 'Polish Set'].map(o => <option key={o} value={o}>{o}</option>)}
+               {['Bridal', 'Party', 'Glitter', 'College Wear', 'Regular'].map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
             </FormSelect>
             <FormInput label="Price" name="price" type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required />
             <FormInput label="Original Price" name="originalPrice" type="number" value={formData.originalPrice} onChange={e => setFormData({...formData, originalPrice: e.target.value})} />
@@ -749,7 +751,7 @@ const AdminProductManager = ({ products, onSave, onDelete }) => {
           
           <div className="flex gap-3 pt-2">
             <button type="submit" className="px-8 py-3 bg-gray-900 text-white rounded-2xl font-semibold hover:bg-black transition-all shadow-lg shadow-gray-200 active:scale-95">{isEditing ? 'Update Product' : 'Create Product'}</button>
-            {isEditing && <button type="button" onClick={() => { setIsEditing(false); setFormData({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] }); }} className="px-8 py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-50 active:scale-95">Cancel</button>}
+            {isEditing && <button type="button" onClick={() => { setIsEditing(false); setFormData({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] }); }} className="px-8 py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-50 active:scale-95">Cancel</button>}
           </div>
         </form>
       </div>
