@@ -632,43 +632,68 @@ const AdminDashboard = ({ db, user, setModal }) => {
 };
 
 const AdminOrderList = ({ orders, onUpdateStatus }) => (
-    <div className="overflow-x-auto">
-      <table className="min-w-full">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50/50">
-            {['ID', 'Customer', 'Total', 'Date', 'Status', 'Actions'].map(h => (
-                <th key={h} className="px-6 py-5 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-50">
-          {orders.map((order) => (
-            <tr key={order.id} className="hover:bg-gray-50/80 transition-colors group">
-              <td className="px-6 py-5 text-sm font-medium text-gray-900">#{order.id.substring(0,6)}</td>
-              <td className="px-6 py-5 text-sm text-gray-600 font-medium">{order.customer?.name}</td>
-              <td className="px-6 py-5 text-sm text-gray-900 font-bold">₹{order.total.toFixed(2)}</td>
-              <td className="px-6 py-5 text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</td>
-              <td className="px-6 py-5"><StatusPill status={order.status} /></td>
-              <td className="px-6 py-5">
-                <div className="relative">
-                    <select 
-                        className="appearance-none bg-gray-50 hover:bg-white border border-gray-200 text-gray-700 text-sm rounded-xl py-2 pl-3 pr-8 leading-tight focus:outline-none focus:bg-white focus:border-pink-500 transition-all cursor-pointer" 
-                        value={order.status} 
-                        onChange={(e) => onUpdateStatus(order.id, order.userId, e.target.value)}
-                    >
-                        {['Pending', 'Shipped', 'Delivered', 'Cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                        <ChevronRight className="w-4 h-4 rotate-90" />
-                    </div>
-                </div>
+  <div className="overflow-x-auto">
+    <table className="min-w-full">
+      <thead>
+        <tr className="border-b bg-gray-50/50">
+          {['ID', 'Total', 'Date', 'Status', 'Actions'].map(h => (
+            <th key={h} className="px-6 py-4 text-xs font-bold text-gray-400 uppercase">
+              {h}
+            </th>
+          ))}
+        </tr>
+      </thead>
+
+      <tbody className="divide-y">
+        {orders.map(order => {
+          const total =
+            order.totalPrice ??
+            order.total ??
+            order.subtotal ??
+            0;
+
+          const createdAt =
+            order.createdAt?.toDate
+              ? order.createdAt.toDate()
+              : new Date(order.createdAt || Date.now());
+
+          return (
+            <tr key={order.id} className="hover:bg-gray-50">
+              <td className="px-6 py-4 font-medium">#{order.id.slice(0, 6)}</td>
+
+              <td className="px-6 py-4 font-bold">
+                ₹{Number(total).toFixed(2)}
+              </td>
+
+              <td className="px-6 py-4 text-gray-500">
+                {createdAt.toLocaleDateString()}
+              </td>
+
+              <td className="px-6 py-4">
+                <StatusPill status={order.status || 'PLACED'} />
+              </td>
+
+              <td className="px-6 py-4">
+                <select
+                  value={order.status}
+                  onChange={(e) =>
+                    onUpdateStatus(order.id, null, e.target.value)
+                  }
+                  className="border rounded-xl px-3 py-1"
+                >
+                  {['PLACED', 'CONFIRMED', 'SHIPPED', 'DELIVERED'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
 );
+
 
 const AdminBookingList = ({ bookings, onUpdateStatus }) => (
     <div className="overflow-x-auto">
