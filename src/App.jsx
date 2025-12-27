@@ -1,3 +1,4 @@
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
 import { initializeApp, getApp } from 'firebase/app';
 import { 
@@ -207,10 +208,13 @@ const FIREBASE_CONFIG = {
   storageBucket: "nail-store-3a798.firebasestorage.app",
   messagingSenderId: "546074655006",
   appId: "1:546074655006:web:e9b6312202275e4c3f310f",
-  measurementId: "G-EV5N2W4CN3"
 };
 
-const ADMIN_EMAIL = "omgupta111k@gmail.com";
+const ADMIN_EMAILS = [
+  "omgupta111k@gmail.com",
+  "themoonbeauty76@gmail.com",
+];
+
 
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", 
@@ -619,7 +623,7 @@ const AdminDashboard = ({ db, user, setModal }) => {
       </div>
 
       <div className="bg-white/80 backdrop-blur-xl rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/60 min-h-[400px] overflow-hidden">
-        {activeTab === 'orders' && <AdminOrderList orders={orders} onUpdateStatus={handleUpdateOrderStatus} />}
+        {activeTab === 'orders' && <AdminOrderList orders={orders} onUpdateStatus={handleUpdateOrderStatus} db={db} />}
         {activeTab === 'bookings' && <AdminBookingList bookings={bookings} onUpdateStatus={handleUpdateBookingStatus} />}
         {activeTab === 'products' && <AdminProductManager products={products} onSave={handleProductSave} onDelete={handleDeleteProduct} />}
         {activeTab === 'gallery' && <AdminGalleryManager items={galleryItems} onSave={handleGallerySave} onDelete={handleDeleteGalleryItem} onToggleActive={handleToggleGalleryActive} />}
@@ -628,44 +632,222 @@ const AdminDashboard = ({ db, user, setModal }) => {
   );
 };
 
-const AdminOrderList = ({ orders, onUpdateStatus }) => (
-    <div className="overflow-x-auto">
-      <table className="min-w-full">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50/50">
-            {['ID', 'Customer', 'Total', 'Date', 'Status', 'Actions'].map(h => (
-                <th key={h} className="px-6 py-5 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-50">
-          {orders.map((order) => (
-            <tr key={order.id} className="hover:bg-gray-50/80 transition-colors group">
-              <td className="px-6 py-5 text-sm font-medium text-gray-900">#{order.id.substring(0,6)}</td>
-              <td className="px-6 py-5 text-sm text-gray-600 font-medium">{order.customer?.name}</td>
-              <td className="px-6 py-5 text-sm text-gray-900 font-bold">₹{order.total.toFixed(2)}</td>
-              <td className="px-6 py-5 text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</td>
-              <td className="px-6 py-5"><StatusPill status={order.status} /></td>
-              <td className="px-6 py-5">
-                <div className="relative">
-                    <select 
-                        className="appearance-none bg-gray-50 hover:bg-white border border-gray-200 text-gray-700 text-sm rounded-xl py-2 pl-3 pr-8 leading-tight focus:outline-none focus:bg-white focus:border-pink-500 transition-all cursor-pointer" 
-                        value={order.status} 
-                        onChange={(e) => onUpdateStatus(order.id, order.userId, e.target.value)}
-                    >
-                        {['Pending', 'Shipped', 'Delivered', 'Cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                        <ChevronRight className="w-4 h-4 rotate-90" />
-                    </div>
-                </div>
-              </td>
+const AdminOrderList = ({ orders, onUpdateStatus, db }) => {
+  const [selectedOrder, setSelectedOrder] = useState(null);
+
+  const handleUpdateStatus = async (newStatus) => {
+    if (!selectedOrder || !db) return;
+    try {
+      await updateDoc(doc(db, 'admin_orders', selectedOrder.id), { status: newStatus });
+      setSelectedOrder(prev => ({ ...prev, status: newStatus }));
+      onUpdateStatus(selectedOrder.id, null, newStatus);
+    } catch (error) {
+      console.error("Failed to update status:", error);
+    }
+  };
+
+  return (
+    <>
+      {/* Order List Table */}
+      <div className="overflow-x-auto">
+        <table className="min-w-full">
+          <thead>
+            <tr className="border-b bg-gray-50/50">
+              {['ID', 'Total', 'Date', 'Status', 'Actions'].map(h => (
+                <th key={h} className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-);
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {orders.map(order => {
+              const total = order.totalPrice ?? order.total ?? order.subtotal ?? 0;
+              const createdAt = order.createdAt?.toDate
+                ? order.createdAt.toDate()
+                : new Date(order.createdAt || Date.now());
+
+              return (
+                <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
+                  <td className="px-6 py-4 font-medium">#{order.id.slice(0, 8)}</td>
+                  <td className="px-6 py-4 font-bold">₹{Number(total).toFixed(2)}</td>
+                  <td className="px-6 py-4 text-gray-500">{createdAt.toLocaleDateString()}</td>
+                  <td className="px-6 py-4"><StatusPill status={order.status || 'Pending'} /></td>
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => setSelectedOrder(order)}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-medium hover:bg-black transition-all shadow-sm"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Detailed Order Modal - Fully Responsive & Error-Free */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 backdrop-blur-xl pt-4 pb-8 px-4 overflow-y-auto">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-[32px] shadow-2xl w-full max-w-5xl my-4 border border-white/50 ios-card">
+            {/* Sticky Header */}
+            <div className="sticky top-0 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-6 py-5 flex justify-between items-center rounded-t-[32px]">
+              <h2 className="text-2xl font-bold text-gray-900">Order Details</h2>
+              <button
+                onClick={() => setSelectedOrder(null)}
+                className="p-2.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-600" />
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-6 space-y-8 lg:space-y-10 lg:p-8">
+              {/* Order Meta */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-6 border-b border-gray-100">
+                <div>
+                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Order ID</p>
+                  <p className="text-lg font-bold text-gray-900 mt-1 break-all">#{selectedOrder.id.substring(0, 12)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Order Date</p>
+                  <p className="text-base font-medium text-gray-900 mt-1">
+                    {new Date(selectedOrder.createdAt?.toDate?.() || selectedOrder.createdAt).toLocaleString('en-IN', {
+                      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-2">Status</p>
+                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                    <select
+                      value={selectedOrder.status || 'Pending'}
+                      onChange={(e) => handleUpdateStatus(e.target.value)}
+                      className="w-full sm:w-auto flex-1 px-4 py-3 rounded-2xl border border-gray-200 bg-white font-medium focus:ring-2 focus:ring-pink-500 transition-all"
+                    >
+                      {['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    <StatusPill status={selectedOrder.status || 'Pending'} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Details */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+                  <User className="w-6 h-6 text-pink-500 mr-3 flex-shrink-0" />
+                  Customer Details
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 bg-gray-50/50 rounded-3xl p-5">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Name</p>
+                    <p className="text-base font-semibold text-gray-900 mt-1">{selectedOrder.customer?.name || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Phone</p>
+                    <p className="text-base font-medium text-gray-900 mt-1">{selectedOrder.customer?.phone || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Email</p>
+                    <p className="text-base font-medium text-gray-900 mt-1 break-all">{selectedOrder.customer?.email || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Address */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+                  <MapPin className="w-6 h-6 text-pink-500 mr-3 flex-shrink-0" />
+                  Delivery Address
+                </h3>
+                <div className="bg-gray-50/50 rounded-3xl p-5 space-y-2">
+                  <p className="font-medium text-gray-900">{selectedOrder.address?.street || 'N/A'}</p>
+                  {selectedOrder.address?.landmark && (
+                    <p className="text-gray-600">Landmark: {selectedOrder.address.landmark}</p>
+                  )}
+                  <p className="text-gray-700">
+                    {selectedOrder.address?.city}, {selectedOrder.address?.state} - {selectedOrder.address?.pincode}
+                  </p>
+                </div>
+              </div>
+
+              {/* Products */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+                  <Package className="w-6 h-6 text-pink-500 mr-3 flex-shrink-0" />
+                  Products ({selectedOrder.items?.length || 0})
+                </h3>
+                <div className="space-y-4">
+                  {(selectedOrder.items || []).map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="flex flex-col sm:flex-row items-start sm:items-center gap-5 bg-white rounded-3xl p-5 shadow-sm border border-gray-100"
+                    >
+                      <div className="w-full sm:w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0 mx-auto sm:mx-0">
+                        <img
+                          src={item.imageUrl || 'https://placehold.co/200x200/F5F5F7/D1D1D6?text=No+Image'}
+                          alt={item.name || 'Product'}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 text-center sm:text-left min-w-0">
+                        <h4 className="text-lg font-bold text-gray-900 truncate">{item.name || 'Unnamed Product'}</h4>
+                        <p className="text-sm text-gray-500 mt-1">{item.category || 'Uncategorized'}</p>
+                      </div>
+                      <div className="text-center sm:text-right w-full sm:w-auto">
+                        <p className="text-sm text-gray-500">Quantity</p>
+                        <p className="text-xl font-bold text-gray-900">1</p>
+                      </div>
+                      <div className="text-center sm:text-right w-full sm:w-auto">
+                        <p className="text-sm text-gray-500">Price</p>
+                        <p className="text-xl font-bold price-pink">₹{(item.price || 0).toFixed(2)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Payment Summary */}
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+                  <CreditCard className="w-6 h-6 text-pink-500 mr-3 flex-shrink-0" />
+                  Payment Summary
+                </h3>
+                <div className="bg-gradient-to-br from-pink-50/50 to-white rounded-3xl p-6 lg:p-8 border border-pink-100">
+                  <div className="space-y-4 text-lg">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal</span>
+                      <span className="font-medium">₹{(selectedOrder.subtotal || selectedOrder.total || 0).toFixed(2)}</span>
+                    </div>
+                    {selectedOrder.discount > 0 && (
+                      <div className="flex justify-between text-green-600">
+                        <span>Discount</span>
+                        <span className="font-bold">- ₹{selectedOrder.discount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-4 border-t border-gray-200">
+                      <span className="text-xl font-bold text-gray-900">Total Paid</span>
+                      <span className="text-3xl font-bold text-gradient-premium">₹{(selectedOrder.total || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between pt-4 border-t border-gray-100">
+                      <span className="text-gray-600">Payment Method</span>
+                      <span className="font-semibold capitalize">{selectedOrder.paymentMethod || 'COD'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 const AdminBookingList = ({ bookings, onUpdateStatus }) => (
     <div className="overflow-x-auto">
@@ -698,12 +880,12 @@ const AdminBookingList = ({ bookings, onUpdateStatus }) => (
 const AdminProductManager = ({ products, onSave, onDelete }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [formData, setFormData] = useState({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] });
+  const [formData, setFormData] = useState({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] });
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({ ...formData, price: parseFloat(formData.price), originalPrice: parseFloat(formData.originalPrice) || null, images: formData.images.filter(x => x) }, isEditing, editId);
-    setFormData({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] });
+    setFormData({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] });
     setIsEditing(false); setEditId(null);
   };
 
@@ -717,10 +899,37 @@ const AdminProductManager = ({ products, onSave, onDelete }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormInput label="Name" name="name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
             <FormSelect label="Category" name="category" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-               {['Press-Ons', 'Polish', 'Gel', 'Bridal', 'Polish Set'].map(o => <option key={o} value={o}>{o}</option>)}
+               {['Bridal', 'Party', 'Glitter', 'College Wear', 'Regular'].map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
             </FormSelect>
-            <FormInput label="Price" name="price" type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required />
-            <FormInput label="Original Price" name="originalPrice" type="number" value={formData.originalPrice} onChange={e => setFormData({...formData, originalPrice: e.target.value})} />
+            <FormInput
+              label="Price"
+              name="price"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.price}
+              onChange={e => {
+                const value = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, price: value });
+              }}
+              required
+            />
+
+            <FormInput
+              label="Original Price"
+              name="originalPrice"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={formData.originalPrice}
+              onChange={e => {
+                const value = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, originalPrice: value });
+              }}
+            />
+
           </div>
           <FormInput label="Main Image URL" name="imageUrl" value={formData.imageUrl} onChange={e => setFormData({...formData, imageUrl: e.target.value})} required />
           
@@ -746,7 +955,7 @@ const AdminProductManager = ({ products, onSave, onDelete }) => {
           
           <div className="flex gap-3 pt-2">
             <button type="submit" className="px-8 py-3 bg-gray-900 text-white rounded-2xl font-semibold hover:bg-black transition-all shadow-lg shadow-gray-200 active:scale-95">{isEditing ? 'Update Product' : 'Create Product'}</button>
-            {isEditing && <button type="button" onClick={() => { setIsEditing(false); setFormData({ name: '', price: '', originalPrice: '', category: 'Press-Ons', imageUrl: '', description: '', images: [] }); }} className="px-8 py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-50 active:scale-95">Cancel</button>}
+            {isEditing && <button type="button" onClick={() => { setIsEditing(false); setFormData({ name: '', price: '', originalPrice: '', category: 'Bridal', imageUrl: '', description: '', images: [] }); }} className="px-8 py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl font-semibold hover:bg-gray-50 active:scale-95">Cancel</button>}
           </div>
         </form>
       </div>
@@ -984,7 +1193,7 @@ const ProductDetailModal = ({ product, onClose, onAddToCart, onToggleWishlist, i
             <div className="grid grid-cols-3 gap-4 pt-8 border-t border-gray-100">
                <div className="text-center p-4 bg-gray-50 rounded-2xl">
                  <Truck className="w-6 h-6 text-gray-900 mx-auto mb-2" strokeWidth={1.5} />
-                 <span className="text-xs font-semibold text-gray-600 block">Fast Delivery</span>
+                 <span className="text-xs font-semibold text-gray-600 block"> 3-4 Days Delivery</span>
                </div>
                <div className="text-center p-4 bg-gray-50 rounded-2xl">
                  <CheckCircle className="w-6 h-6 text-gray-900 mx-auto mb-2" strokeWidth={1.5} />
@@ -1174,14 +1383,22 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
 
   return (
     <>
-      <nav className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isScrolled ? 'bg-white/80 backdrop-blur-2xl border-b border-white/20 shadow-[0_2px_20px_rgba(0,0,0,0.02)] py-3' : 'bg-transparent py-6'}`}>
+      <nav className={`sticky top-0 w-full z-50 transition-all duration-300 ease-out
+  ${isScrolled
+          ? 'bg-white/80 backdrop-blur-2xl border-b border-white/20 shadow-[0_2px_20px_rgba(0,0,0,0.02)] py-3'
+          : 'bg-white/60 backdrop-blur-xl py-4'
+        }`}>
         <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex justify-between items-center">
             
             {/* Logo */}
             <div className="flex-1">
-              <button onClick={() => setPage('home')} className="flex items-center text-xl font-bold text-gray-900 tracking-tight z-50 relative">
-                <Sparkles className="w-5 h-5 text-pink-500 mr-2" strokeWidth={2.5} />
+              <button
+                onClick={() => setPage('home')}
+                className="flex items-center gap-2 text-xl font-bold text-gray-900 tracking-tight
+             px-2 py-1 rounded-lg
+             hover:opacity-90 active:scale-95 transition-all"
+              >
                 MOONZBEAUTY
               </button>
             </div>
@@ -1190,7 +1407,7 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
             <div className="hidden md:flex flex-1 justify-center space-x-2 bg-white/50 backdrop-blur-md px-2 py-1.5 rounded-full border border-white/40 shadow-sm">
               <NavLink page="home" label="Home" />
               <NavLink page="products" label="Shop" />
-              <NavLink page="bridal" label="Bridal" />
+              <NavLink page="bridal" label="Makeup" />
             </div>
 
             {/* Right Icons & Mobile Toggle */}
@@ -1306,17 +1523,28 @@ const Header = ({ setPage, cartCount, user, isMobileMenuOpen, setMobileMenuMenuO
 // ... (HomePage, ProductListPage, WishlistPage, CartPage, CheckoutPage - Keep Existing Logic but ensure consistent Apple styling if touched, mostly fine as is from provided code, focusing on Account & Admin) ...
 // Re-inserting core pages for completeness
 
-const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
-  <div className="animate-fade-in">
-    <div className="relative h-[85vh] w-full overflow-hidden">
-      <div className="absolute inset-0">
-        <img 
-          src="https://res.cloudinary.com/dzxxtkn16/image/upload/v1766018071/ChatGPT_Image_Dec_18_2025_06_03_58_AM_bpwknn.png"
-          alt="Hero"
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40" />
-      </div>
+  const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
+    <div className="animate-fade-in">
+      <div className="relative h-[85vh] w-full overflow-hidden">
+        <div className="absolute inset-0">
+  <video
+    autoPlay
+    muted
+    loop
+    playsInline
+    preload="metadata"
+    poster="https://res.cloudinary.com/dzxxtkn16/video/upload/v1766159866/Luxury_Nail_Art_Landing_Page_Video_pfv7nu.mp4"
+    className="w-full h-full object-cover"
+  >
+    <source
+      src="https://res.cloudinary.com/dzxxtkn16/video/upload/v1766159866/Luxury_Nail_Art_Landing_Page_Video_pfv7nu.mp4"
+      type="video/mp4"
+    />
+  </video>
+
+  <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/40" />
+</div>
+
       
       <div className="absolute inset-0 flex items-center justify-center text-center px-4">
         <div className="max-w-3xl space-y-8">
@@ -1325,7 +1553,7 @@ const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, on
               Shop Collection
             </button>
             <button onClick={() => setPage('bridal')} className="px-8 py-4 bg-white/20 backdrop-blur-md text-white border border-white/30 rounded-full font-semibold text-lg hover:bg-white/30 transition-all hover:scale-105">
-              Book Bridal
+              Book Bridal Makeup
             </button>
           </div>
         </div>
@@ -1365,31 +1593,147 @@ const HomePage = ({ products, setPage, onAddToCart, onProductClick, wishlist, on
   </div>
 );
 
-const ProductListPage = ({ products, onAddToCart, onProductClick, wishlist, onToggleWishlist }) => (
-  <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
-    <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
-      Shop All Nail Products
-    </h1>
-    {products.length === 0 ? (
-       <p className="text-center text-gray-500">
-         No products found. Use the Admin Dashboard to add products.
-       </p>
-    ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-stretch">
-        {products.map((product) => (
-          <ProductCard 
-            key={product.id} 
-            product={product} 
-            onAddToCart={onAddToCart} 
-            onProductClick={onProductClick}
-            isWishlisted={wishlist.some(item => item.id === product.id)}
-            onToggleWishlist={onToggleWishlist}
-          />
-        ))}
+const ProductListPage = ({
+  products,
+  onAddToCart,
+  onProductClick,
+  wishlist,
+  onToggleWishlist
+}) => {
+
+  // ================= FILTER STATE =================
+  const CATEGORIES = [
+    'All',
+    'Bridal',
+    'Party',
+    'Glitter',
+    'College Wear',
+    'Regular'
+  ];
+
+  const [selectedCategory, setSelectedCategory] = React.useState('All');
+  const [priceRange, setPriceRange] = React.useState({ min: '', max: '' });
+
+  const filteredProducts = React.useMemo(() => {
+    return products.filter(product => {
+      const categoryMatch =
+        selectedCategory === 'All' || product.category === selectedCategory;
+
+      const price = Number(product.price || 0);
+      const min = priceRange.min ? Number(priceRange.min) : 0;
+      const max = priceRange.max ? Number(priceRange.max) : Infinity;
+
+      return categoryMatch && price >= min && price <= max;
+    });
+  }, [products, selectedCategory, priceRange]);
+
+  // ================= RETURN JSX =================
+  return (
+    <div className="pt-24 pb-16">
+
+      {/* Heading */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
+          Shop All Nail Products
+        </h1>
       </div>
-    )}
-  </div>
-);
+
+
+      {/* Filter Section */}
+      <div className="mb-12">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm px-6 py-6">
+          <div className="flex flex-col sm:flex-row gap-6 items-end justify-between">
+
+            {/* Category */}
+            <div className="w-full sm:w-64">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                Category
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full rounded-2xl px-4 py-3 text-sm font-medium ring-1 ring-gray-200 focus:ring-2 focus:ring-pink-500 bg-white"
+              >
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Price */}
+            <div className="flex gap-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                  Min Price
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="₹0"
+                  value={priceRange.min}
+                  onChange={(e) =>
+                    setPriceRange({ ...priceRange, min: e.target.value.replace(/\D/g, '') })
+                  }
+                  className="w-32 rounded-2xl px-4 py-3 text-sm ring-1 ring-gray-200 focus:ring-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
+                  Max Price
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="₹9999"
+                  value={priceRange.max}
+                  onChange={(e) =>
+                    setPriceRange({ ...priceRange, max: e.target.value.replace(/\D/g, '') })
+                  }
+                  className="w-32 rounded-2xl px-4 py-3 text-sm ring-1 ring-gray-200 focus:ring-pink-500"
+                />
+              </div>
+            </div>
+
+            {/* Reset */}
+            <button
+              onClick={() => {
+                setSelectedCategory('All');
+                setPriceRange({ min: '', max: '' });
+              }}
+              className="px-8 py-3 rounded-2xl bg-gray-900 text-white text-sm font-semibold hover:bg-black"
+            >
+              Reset
+            </button>
+
+          </div>
+        </div>
+      </div>
+
+      {/* Product Grid */}
+      {filteredProducts.length === 0 ? (
+        <p className="text-center text-gray-500 py-20">
+          No products found. Try adjusting filters.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          {filteredProducts.map(product => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onAddToCart={onAddToCart}
+              onProductClick={onProductClick}
+              isWishlisted={wishlist.some(item => item.id === product.id)}
+              onToggleWishlist={onToggleWishlist}
+            />
+          ))}
+        </div>
+      )}
+
+    </div>
+  );
+};
+
 
 const WishlistPage = ({ wishlist, onAddToCart, onProductClick, onToggleWishlist, setPage, user }) => {
   if (!user) {
@@ -1552,6 +1896,15 @@ const CartPage = ({ cartItems, onRemoveFromCart, onCheckout, onGenerateIdeas, us
     </div>
   );
 };
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders }) => {
   const [step, setStep] = useState(1); 
@@ -1663,26 +2016,92 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders })
     }
   };
 
-  const handlePaymentSubmit = (e) => {
+  const handlePaymentSubmit = async (e) => {
     e.preventDefault();
-    if (paymentMethod !== 'COD') {
-       setModal({
-         title: "Payment Unavailable",
-         body: "This feature is currently unavailable. Please choose Cash on Delivery (COD) to place your order."
-       });
-       return;
+    if (paymentMethod === 'COD') {
+      // Existing COD logic
+      const orderDetails = {
+        customer: customerDetails,
+        address: addressDetails,
+        paymentMethod: paymentMethod,
+        subtotal: subtotal,
+        discount: discount,
+        couponCode: appliedCoupon,
+        total: total,
+        status: "Pending"
+      };
+      onConfirmOrder(orderDetails);
+      return;
     }
-    const orderDetails = {
-      customer: customerDetails,
-      address: addressDetails,
-      paymentMethod: paymentMethod,
-      subtotal: subtotal,
-      discount: discount,
-      couponCode: appliedCoupon,
-      total: total,
-      status: "Pending" 
-    };
-    onConfirmOrder(orderDetails);
+  
+    // Razorpay for UPI/Card
+    setModal({ title: "Processing Payment", body: "Please wait...", isLoading: true });
+  
+    try {
+      const loaded = await loadRazorpayScript();
+      if (!loaded) throw new Error('Failed to load Razorpay SDK');
+  
+      // Call Firebase function to create order
+      const { getFunctions, httpsCallable } = await import('firebase/functions');
+      const functions = getFunctions();
+      const createOrder = httpsCallable(functions, 'createRazorpayOrder');
+      const result = await createOrder({ amount: total * 100, receipt: `receipt_${Date.now()}` });  // Amount in paise
+      const razorpayOrderId = result.data.orderId;
+  
+      // Open Razorpay modal
+      const options = {
+        key: 'rzp_test_RwjNMZz1ZZcEAO',  // Paste your test/live Key ID here
+        amount: total * 100,
+        currency: 'INR',
+        name: 'MOONZBEAUTY',
+        description: 'Order Payment',
+        image: 'https://your-logo-url.com/logo.png',  // Optional: Add your logo URL
+        order_id: razorpayOrderId,
+        handler: async (response) => {
+          // Verify payment on backend
+          const verifyPayment = httpsCallable(functions, 'verifyRazorpayPayment');
+          const verifyResult = await verifyPayment({
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature
+          });
+  
+          if (verifyResult.data.status === 'success') {
+            // Payment success - confirm order
+            const orderDetails = {
+              customer: customerDetails,
+              address: addressDetails,
+              paymentMethod: paymentMethod,
+              subtotal: subtotal,
+              discount: discount,
+              couponCode: appliedCoupon,
+              total: total,
+              status: "Pending",
+              razorpayPaymentId: verifyResult.data.paymentId  // Optional: Save payment ID
+            };
+            onConfirmOrder(orderDetails);
+            setModal({ title: "Payment Successful!", body: "Your order has been placed." });
+          } else {
+            setModal({ title: "Payment Verification Failed", body: "Please contact support." });
+          }
+        },
+        prefill: {
+          name: customerDetails.name,
+          email: customerDetails.email,
+          contact: customerDetails.phone
+        },
+        theme: { color: '#db2777' }  // Match your pink theme
+      };
+  
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (response) => {
+        setModal({ title: "Payment Failed", body: response.error.description });
+      });
+      rzp.open();
+    } catch (error) {
+      console.error('Payment error:', error);
+      setModal({ title: "Error", body: "Failed to initiate payment. Try again." });
+    }
   };
 
   const PaymentOption = ({ value, label, icon: Icon }) => (
@@ -2486,7 +2905,7 @@ const BridalBookingPage = ({ onBookingSubmit, setIsLoading, setModal, isLoading,
       setIsLoading(false);
     } catch (error) {
       setIsLoading(false);
-      setModal({ title: "Error", body: `Could not generate message: ${error.message}` });
+      setModal({ title: "Error", body: `This feature is currently unavailable` });
     }
   };
 
@@ -2595,7 +3014,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   
   // ADMIN CHECK
-  const isAdmin = user && user.email === ADMIN_EMAIL;
+  const isAdmin = user && ADMIN_EMAILS.includes(user.email);
 
   const [isMobileMenuOpen, setMobileMenuMenuOpen] = useState(false);
   
@@ -3050,7 +3469,7 @@ Based on my cart, suggest 3 other products I might love from the available list.
     } catch (error) {
       console.error("Error generating recommendations:", error);
       setIsLoading(false);
-      setModal({ title: "Error", body: `Could not generate recommendations: ${error.message}` });
+      setModal({ title: "Error", body: `This feature is currently unavailable` });
     }
   };
 
