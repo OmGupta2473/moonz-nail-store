@@ -636,15 +636,22 @@ const AdminOrderList = ({ orders, onUpdateStatus, db }) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   const handleUpdateStatus = async (newStatus) => {
-    if (!selectedOrder || !db) return;
+    if (!selectedOrder) return;
+
     try {
-      await updateDoc(doc(db, 'admin_orders', selectedOrder.id), { status: newStatus });
+      await onUpdateStatus(
+        selectedOrder.id,
+        selectedOrder.userId || null,
+        newStatus
+      );
+
+      // update local modal state only
       setSelectedOrder(prev => ({ ...prev, status: newStatus }));
-      onUpdateStatus(selectedOrder.id, selectedOrder.userId || null, newStatus);
-    } catch (error) {
-      console.error("Failed to update status:", error);
+    } catch (e) {
+      console.error(e);
     }
   };
+
 
   return (
     <>
@@ -712,141 +719,140 @@ const AdminOrderList = ({ orders, onUpdateStatus, db }) => {
       </div>
 
       {/* Responsive Detailed Order Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 backdrop-blur-xl pt-4 pb-8 px-4 overflow-y-auto">
-          <div className="bg-white/90 backdrop-blur-2xl rounded-[32px] shadow-2xl w-full max-w-5xl my-4 border border-white/50 ios-card">
-            <div className="sticky top-0 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-6 py-5 flex justify-between items-center rounded-t-[32px]">
-              <h2 className="text-2xl font-bold text-gray-900">Order Details</h2>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="p-2.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-              >
-                <X className="w-6 h-6 text-gray-600" />
-              </button>
+{selectedOrder && (
+  <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 backdrop-blur-xl pt-4 pb-8 px-4 overflow-y-auto">
+    <div className="bg-white/90 backdrop-blur-2xl rounded-[32px] shadow-2xl w-full max-w-5xl my-4 border border-white/50 ios-card max-h-[90vh] flex flex-col">
+      
+      {/* Sticky Header - Always visible at top when scrolling */}
+      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-xl border-b border-gray-100 px-6 py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 rounded-t-[32px] shadow-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Order Details</h2>
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-600">
+            <span className="font-medium">#{selectedOrder.id.substring(0, 12)}</span>
+            <span className="hidden xs:inline">•</span>
+            <span>
+              {new Date(selectedOrder.createdAt?.toDate?.() || selectedOrder.createdAt).toLocaleString('en-IN', {
+                day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+              })}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedOrder.status || 'Pending'}
+              onChange={(e) => handleUpdateStatus(e.target.value)}
+              className="px-4 py-3 rounded-2xl border border-gray-200 bg-white font-medium focus:ring-2 focus:ring-pink-500 transition-all min-w-[140px]"
+            >
+              {['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <StatusPill status={selectedOrder.status || 'Pending'} />
+          </div>
+          <button
+            onClick={() => setSelectedOrder(null)}
+            className="p-2.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors self-start sm:self-center"
+          >
+            <X className="w-6 h-6 text-gray-600" />
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable Content Area */}
+      <div className="p-6 space-y-8 lg:space-y-10 lg:p-8 overflow-y-auto">
+        {/* Customer & Address */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+              <User className="w-6 h-6 text-pink-500 mr-3" />
+              Customer
+            </h3>
+            <div className="bg-gray-50/50 rounded-3xl p-5 space-y-2">
+              <p className="font-medium">{selectedOrder.customer?.name || 'N/A'}</p>
+              <p className="text-gray-600">{selectedOrder.customer?.phone || 'N/A'}</p>
+              <p className="text-gray-600 break-all">{selectedOrder.customer?.email || 'N/A'}</p>
             </div>
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+              <MapPin className="w-6 h-6 text-pink-500 mr-3" />
+              Delivery Address
+            </h3>
+            <div className="bg-gray-50/50 rounded-3xl p-5 space-y-2">
+              <p className="font-medium">{selectedOrder.address?.street || 'N/A'}</p>
+              {selectedOrder.address?.landmark && <p className="text-gray-600">{selectedOrder.address.landmark}</p>}
+              <p className="text-gray-700">
+                {selectedOrder.address?.city}, {selectedOrder.address?.state} - {selectedOrder.address?.pincode}
+              </p>
+            </div>
+          </div>
+        </div>
 
-            <div className="p-6 space-y-8 lg:space-y-10 lg:p-8">
-              {/* Order Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pb-6 border-b border-gray-100">
-                <div>
-                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Order ID</p>
-                  <p className="text-lg font-bold text-gray-900 mt-1 break-all">#{selectedOrder.id.substring(0, 12)}</p>
+        {/* Products */}
+        <div>
+          <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+            <Package className="w-6 h-6 text-pink-500 mr-3" />
+            Products ({selectedOrder.items?.length || 0})
+          </h3>
+          <div className="space-y-4">
+            {(selectedOrder.items || []).map((item, idx) => (
+              <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center gap-5 bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
+                <div className="w-full sm:w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0 mx-auto sm:mx-0">
+                  <img
+                    src={item.imageUrl || 'https://placehold.co/200x200/F5F5F7/D1D1D6?text=No+Image'}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider">Date</p>
-                  <p className="text-base font-medium text-gray-900 mt-1">
-                    {new Date(selectedOrder.createdAt?.toDate?.() || selectedOrder.createdAt).toLocaleString('en-IN', {
-                      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                    })}
-                  </p>
+                <div className="flex-1 text-center sm:text-left">
+                  <h4 className="text-lg font-bold text-gray-900">{item.name || 'Unnamed Product'}</h4>
+                  <p className="text-sm text-gray-500 mt-1">{item.category || 'Uncategorized'}</p>
                 </div>
-                <div className="sm:col-span-2 lg:col-span-1">
-                  <p className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-2">Status</p>
-                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                    <select
-                      value={selectedOrder.status || 'Pending'}
-                      onChange={(e) => handleUpdateStatus(e.target.value)}
-                      className="w-full sm:w-auto flex-1 px-4 py-3 rounded-2xl border border-gray-200 bg-white font-medium focus:ring-2 focus:ring-pink-500 transition-all"
-                    >
-                      {['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled'].map(s => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                    <StatusPill status={selectedOrder.status || 'Pending'} />
-                  </div>
+                <div className="text-center sm:text-right">
+                  <p className="text-sm text-gray-500">Qty: 1</p>
+                  <p className="text-xl font-bold price-pink mt-1">₹{(item.price || 0).toFixed(2)}</p>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
 
-              {/* Customer & Address */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
-                    <User className="w-6 h-6 text-pink-500 mr-3" />
-                    Customer
-                  </h3>
-                  <div className="bg-gray-50/50 rounded-3xl p-5 space-y-2">
-                    <p className="font-medium">{selectedOrder.customer?.name || 'N/A'}</p>
-                    <p className="text-gray-600">{selectedOrder.customer?.phone || 'N/A'}</p>
-                    <p className="text-gray-600 break-all">{selectedOrder.customer?.email || 'N/A'}</p>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
-                    <MapPin className="w-6 h-6 text-pink-500 mr-3" />
-                    Delivery Address
-                  </h3>
-                  <div className="bg-gray-50/50 rounded-3xl p-5 space-y-2">
-                    <p className="font-medium">{selectedOrder.address?.street || 'N/A'}</p>
-                    {selectedOrder.address?.landmark && <p className="text-gray-600">{selectedOrder.address.landmark}</p>}
-                    <p className="text-gray-700">
-                      {selectedOrder.address?.city}, {selectedOrder.address?.state} - {selectedOrder.address?.pincode}
-                    </p>
-                  </div>
-                </div>
+        {/* Payment Summary */}
+        <div>
+          <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
+            <CreditCard className="w-6 h-6 text-pink-500 mr-3" />
+            Payment Summary
+          </h3>
+          <div className="bg-gradient-to-br from-pink-50/50 to-white rounded-3xl p-6 lg:p-8 border border-pink-100">
+            <div className="space-y-4 text-lg">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Subtotal</span>
+                <span>₹{(selectedOrder.subtotal || selectedOrder.total || 0).toFixed(2)}</span>
               </div>
-
-              {/* Products */}
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
-                  <Package className="w-6 h-6 text-pink-500 mr-3" />
-                  Products ({selectedOrder.items?.length || 0})
-                </h3>
-                <div className="space-y-4">
-                  {(selectedOrder.items || []).map((item, idx) => (
-                    <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center gap-5 bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
-                      <div className="w-full sm:w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 flex-shrink-0 mx-auto sm:mx-0">
-                        <img
-                          src={item.imageUrl || 'https://placehold.co/200x200/F5F5F7/D1D1D6?text=No+Image'}
-                          alt={item.name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 text-center sm:text-left">
-                        <h4 className="text-lg font-bold text-gray-900">{item.name || 'Unnamed Product'}</h4>
-                        <p className="text-sm text-gray-500 mt-1">{item.category || 'Uncategorized'}</p>
-                      </div>
-                      <div className="text-center sm:text-right">
-                        <p className="text-sm text-gray-500">Qty: 1</p>
-                        <p className="text-xl font-bold price-pink mt-1">₹{(item.price || 0).toFixed(2)}</p>
-                      </div>
-                    </div>
-                  ))}
+              {selectedOrder.discount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Discount</span>
+                  <span className="font-bold">- ₹{selectedOrder.discount.toFixed(2)}</span>
                 </div>
+              )}
+              <div className="flex justify-between pt-4 border-t border-gray-200">
+                <span className="text-xl font-bold">Total Paid</span>
+                <span className="text-3xl font-bold text-gradient-premium">₹{(selectedOrder.total || 0).toFixed(2)}</span>
               </div>
-
-              {/* Payment Summary */}
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-5 flex items-center">
-                  <CreditCard className="w-6 h-6 text-pink-500 mr-3" />
-                  Payment Summary
-                </h3>
-                <div className="bg-gradient-to-br from-pink-50/50 to-white rounded-3xl p-6 lg:p-8 border border-pink-100">
-                  <div className="space-y-4 text-lg">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Subtotal</span>
-                      <span>₹{(selectedOrder.subtotal || selectedOrder.total || 0).toFixed(2)}</span>
-                    </div>
-                    {selectedOrder.discount > 0 && (
-                      <div className="flex justify-between text-green-600">
-                        <span>Discount</span>
-                        <span className="font-bold">- ₹{selectedOrder.discount.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between pt-4 border-t border-gray-200">
-                      <span className="text-xl font-bold">Total Paid</span>
-                      <span className="text-3xl font-bold text-gradient-premium">₹{(selectedOrder.total || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between pt-4 border-t border-gray-100">
-                      <span className="text-gray-600">Method</span>
-                      <span className="font-semibold capitalize">{selectedOrder.paymentMethod || 'COD'}</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="flex justify-between pt-4 border-t border-gray-100">
+                <span className="text-gray-600">Method</span>
+                <span className="font-semibold capitalize">{selectedOrder.paymentMethod || 'COD'}</span>
               </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
+    </div>
+  </div>
+)}
+
     </>
   );
 };
@@ -1602,7 +1608,6 @@ const ProductListPage = ({
   wishlist,
   onToggleWishlist
 }) => {
-
   // ================= FILTER STATE =================
   const CATEGORIES = [
     'All',
@@ -1620,32 +1625,28 @@ const ProductListPage = ({
     return products.filter(product => {
       const categoryMatch =
         selectedCategory === 'All' || product.category === selectedCategory;
-
       const price = Number(product.price || 0);
       const min = priceRange.min ? Number(priceRange.min) : 0;
       const max = priceRange.max ? Number(priceRange.max) : Infinity;
-
       return categoryMatch && price >= min && price <= max;
     });
   }, [products, selectedCategory, priceRange]);
 
-  // ================= RETURN JSX =================
+  // ================= RETURN JSX — Matching OurWorksSection Animation =================
   return (
-    <div className="pt-24 pb-16">
+    <div className="pt-12 pb-16">
 
       {/* Heading */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+        <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-10 animate-fade-in-up">
           Shop All Nail Products
         </h1>
       </div>
 
-
       {/* Filter Section */}
-      <div className="mb-12">
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm px-6 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm px-6 py-6 animate-fade-in-up delay-100">
           <div className="flex flex-col sm:flex-row gap-6 items-end justify-between">
-
             {/* Category */}
             <div className="w-full sm:w-64">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
@@ -1679,7 +1680,6 @@ const ProductListPage = ({
                   className="w-32 rounded-2xl px-4 py-3 text-sm ring-1 ring-gray-200 focus:ring-pink-500"
                 />
               </div>
-
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
                   Max Price
@@ -1703,35 +1703,40 @@ const ProductListPage = ({
                 setSelectedCategory('All');
                 setPriceRange({ min: '', max: '' });
               }}
-              className="px-8 py-3 rounded-2xl bg-gray-900 text-white text-sm font-semibold hover:bg-black"
+              className="px-8 py-3 rounded-2xl bg-gray-900 text-white text-sm font-semibold hover:bg-black transition-colors"
             >
               Reset
             </button>
-
           </div>
         </div>
       </div>
 
       {/* Product Grid */}
-      {filteredProducts.length === 0 ? (
-        <p className="text-center text-gray-500 py-20">
-          No products found. Try adjusting filters.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-          {filteredProducts.map(product => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onAddToCart={onAddToCart}
-              onProductClick={onProductClick}
-              isWishlisted={wishlist.some(item => item.id === product.id)}
-              onToggleWishlist={onToggleWishlist}
-            />
-          ))}
-        </div>
-      )}
-
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {filteredProducts.length === 0 ? (
+          <p className="text-center text-gray-500 py-20 text-lg animate-fade-in-up delay-200">
+            No products found. Try adjusting filters.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {filteredProducts.map((product, index) => (
+              <div
+                key={product.id}
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${index * 50}ms` }}  // Optional subtle stagger
+              >
+                <ProductCard
+                  product={product}
+                  onAddToCart={onAddToCart}
+                  onProductClick={onProductClick}
+                  isWishlisted={wishlist.some(item => item.id === product.id)}
+                  onToggleWishlist={onToggleWishlist}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -1749,7 +1754,7 @@ const WishlistPage = ({ wishlist, onAddToCart, onProductClick, onToggleWishlist,
   }
 
   return (
-    <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
+    <div className="max-w-7xl mx-auto pt-16 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
       <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-12">
         My Wishlist
       </h1>
@@ -1801,10 +1806,11 @@ const CartPage = ({ cartItems, onRemoveFromCart, onCheckout, onGenerateIdeas, us
   }
 
   return (
-    <div className="max-w-7xl mx-auto pt-32 pb-24 px-6 lg:px-8 animate-fade-in-up">
-      <h1 className="text-5xl font-bold text-gray-900 mb-16 tracking-tight text-center md:text-left">
-        Review your bag.
-      </h1>
+<div className="max-w-7xl mx-auto pt-16 pb-24 px-6 lg:px-8 animate-fade-in-up">
+  <h1 className="text-5xl font-bold text-gray-900 mb-10 tracking-tight text-center md:text-left">
+    Review your bag.
+  </h1>
+
 
       {cartItems.length === 0 ? (
         <div className="text-center py-24 bg-white/50 rounded-[32px] border border-dashed border-gray-200 backdrop-blur-sm">
@@ -2004,6 +2010,7 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders })
     e.preventDefault();
     if (customerDetails.name && customerDetails.email && customerDetails.phone.length === 10) {
       setStep(2); 
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       alert("Please fill in all customer details correctly (Phone number must be 10 digits)."); 
     }
@@ -2013,6 +2020,7 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders })
     e.preventDefault();
     if (addressDetails.street && addressDetails.city && addressDetails.state && addressDetails.pincode.length === 6) {
       setStep(3); 
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       alert("Please fill in all required address fields correctly (Pincode must be 6 digits)."); 
     }
@@ -2198,7 +2206,7 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders })
   };
   
   return (
-    <div className="max-w-7xl mx-auto pt-32 pb-24 px-6 lg:px-8 animate-fade-in-up">
+    <div className="max-w-7xl mx-auto pt-20 pb-24 px-6 lg:px-8 animate-fade-in-up">
       <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-16 tracking-tight">
         Secure Checkout
       </h1>
@@ -2206,7 +2214,7 @@ const CheckoutPage = ({ cartItems, onConfirmOrder, user, setModal, userOrders })
         
         {/* Left Column: Forms */}
         <div className="lg:col-span-8">
-          <div className="bg-white/70 backdrop-blur-xl rounded-[32px] shadow-sm border border-white/50 p-8 sm:p-10">
+          <div className="bg-white/70 backdrop-blur-xl rrnded-[32px] shadow-sm border border-white/50 p-8 sm:p-10">
             <Stepper step={step} />
             <div className="mt-12">
             {step === 1 && (
@@ -2476,7 +2484,7 @@ const AccountPage = ({ user, userOrders, userBookings, onSignOut, setPage, onCan
 
   const NavButton = ({ targetView, icon: Icon, label }) => (
     <button
-      onClick={() => { setView(targetView); setSelectedOrder(null); }}
+      onClick={() => { setView(targetView); setSelectedOrder(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
       className={`w-full text-left flex items-center p-4 rounded-2xl transition-all duration-200 font-medium ${
         view === targetView 
           ? 'bg-gray-900 text-white shadow-md transform scale-[1.02]' 
@@ -2493,6 +2501,7 @@ const AccountPage = ({ user, userOrders, userBookings, onSignOut, setPage, onCan
     return (
       <button 
         onClick={() => handleOrderClick(order)} 
+        
         className="w-full text-left bg-white p-6 rounded-[24px] shadow-sm border border-gray-100 mb-4 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group"
       >
         <div className="flex justify-between items-start mb-4">
@@ -2622,7 +2631,7 @@ const AccountPage = ({ user, userOrders, userBookings, onSignOut, setPage, onCan
 
   if (!user) {
     return (
-      <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn text-center">
+      <div className="max-w-7xl mx-auto pt-16 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn text-center">
         <h1 className="text-3xl font-extrabold text-gray-900 mb-4">Account Access Required</h1>
         <p className="text-lg text-gray-600">Please sign in to view your account details and orders.</p>
       </div>
@@ -2630,7 +2639,7 @@ const AccountPage = ({ user, userOrders, userBookings, onSignOut, setPage, onCan
   }
 
   return (
-    <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
+    <div className="max-w-7xl mx-auto pt-16 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
       <h1 className="text-4xl font-extrabold text-gray-900 mb-12">My Account</h1>
       
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -2673,7 +2682,7 @@ const OurWorksSection = ({ onPostClick, galleryItems }) => {
   const activeItems = galleryItems ? galleryItems.filter(item => item.isActive) : [];
 
   return (
-    <div className="max-w-7xl mx-auto pt-4 pb-16 px-4 sm:px-6 lg:px-8">
+    <div className="max-w-7xl mx-auto pt-1 pb-16 px-4 sm:px-6 lg:px-8">
       <h2 className="text-3xl font-extrabold text-center text-gray-900 mb-8">
         Our Works: Inspiration Gallery
       </h2>
@@ -2916,7 +2925,7 @@ const BridalBookingPage = ({ onBookingSubmit, setIsLoading, setModal, isLoading,
   }, []); 
 
   return (
-    <div className="max-w-7xl mx-auto pt-24 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
+    <div className="max-w-7xl mx-auto pt-16 pb-16 px-4 sm:px-6 lg:px-8 animate-fadeIn">
       
       <OurWorksSection onPostClick={setSelectedPost} galleryItems={galleryItems} />
       
